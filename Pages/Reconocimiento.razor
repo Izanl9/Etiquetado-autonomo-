@@ -2,11 +2,11 @@
 @using System.IO
 
 <div class="container-fluid text-center mt-4">
-    <h3 class="text-primary mb-4">👁️ Visión Artificial</h3>
+    <h3 class="text-primary mb-4"> Visión Artificial</h3>
     <p class="text-muted">Apunta con la cámara al producto para identificarlo.</p>
 
     <button class="btn btn-primary btn-lg w-100 shadow fw-bold mb-3" @onclick="TomarFoto">
-        📷 ABRIR CÁMARA
+         ABRIR CÁMARA
     </button>
 
     @if (!string.IsNullOrEmpty(FotoBase64))
@@ -17,7 +17,7 @@
             <img src="@FotoBase64" class="img-fluid rounded shadow-sm mb-3" style="max-height: 400px; object-fit: contain;" />
             
             <button class="btn btn-success btn-lg w-100 fw-bold" @onclick="AnalizarConIA">
-                🧠 ANALIZAR PRODUCTO (IA)
+                 ANALIZAR PRODUCTO (IA)
             </button>
         </div>
     }
