@@ -1,62 +1,112 @@
 @page "/reconocimiento"
 @using System.IO
+@inject IJSRuntime JS
 
 <div class="container-fluid text-center mt-4">
-    <h3 class="text-primary mb-4"> Visión Artificial</h3>
-    <p class="text-muted">Apunta con la cámara al producto para identificarlo.</p>
+    <h3 class="text-primary mb-4"> Visión Artificial Móvil</h3>
+    <p class="text-muted">Usa la cámara del móvil para identificar la mercancía.</p>
 
-    <button class="btn btn-primary btn-lg w-100 shadow fw-bold mb-3" @onclick="TomarFoto">
-         ABRIR CÁMARA
+    <button class="btn btn-primary btn-lg w-100 shadow fw-bold mb-3" @onclick="TomarFotoNativa">
+        📷 ABRIR CÁMARA
     </button>
 
     @if (!string.IsNullOrEmpty(FotoBase64))
     {
-        <div class="card p-3 shadow-sm mt-3 border-success">
-            <h5 class="text-success mb-3">Foto capturada correctamente</h5>
+        <img src="@FotoBase64" class="img-fluid rounded shadow-sm mb-3" style="max-height: 300px; object-fit: contain;" />
+        
+        <button class="btn btn-success btn-lg w-100 fw-bold" @onclick="AnalizarConIA" disabled="@Analizando">
+            ANALIZAR PRODUCTO
+        </button>
+    }
+
+    @if (Analizando)
+    {
+        <div class="mt-4">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="fw-bold mt-2">Analizando imagen...</p>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(ProductoDetectado))
+    {
+        <div class="alert alert-success mt-4 shadow-sm">
+            <h4> ¡Producto Reconocido!</h4>
+            <h2 class="fw-bold text-dark">@ProductoDetectado</h2>
             
-            <img src="@FotoBase64" class="img-fluid rounded shadow-sm mb-3" style="max-height: 400px; object-fit: contain;" />
-            
-            <button class="btn btn-success btn-lg w-100 fw-bold" @onclick="AnalizarConIA">
-                 ANALIZAR PRODUCTO (IA)
-            </button>
+            <div class="mt-4">
+                <label class="form-label fw-bold">¿Cuántas unidades entran?</label>
+                <input type="number" class="form-control form-control-lg text-center mb-3 fw-bold" @bind="CantidadEntrante" min="1" />
+                
+                <button class="btn btn-warning btn-lg w-100 fw-bold shadow" @onclick="RegistrarEImprimir">
+                    AÑADIR E IMPRIMIR
+                </button>
+            </div>
         </div>
     }
 </div>
 
 @code {
     string FotoBase64 = "";
+    bool Analizando = false;
+    string ProductoDetectado = "";
+    int CantidadEntrante = 1;
 
-    async Task TomarFoto()
+    // PON AQUÍ TU ENLACE REAL DE TEACHABLE MACHINE
+    string UrlModeloGoogle = "--";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Cargamos la IA al abrir la pantalla
+        await JS.InvokeVoidAsync("cargarModelo", UrlModeloGoogle);
+    }
+
+    async Task TomarFotoNativa()
     {
         try
         {
-            // Esta línea mágica llama a la cámara de Android, iOS o Windows
+            // Usamos la API nativa de MAUI para abrir la cámara del teléfono
             if (MediaPicker.Default.IsCaptureSupported)
             {
                 var photo = await MediaPicker.Default.CapturePhotoAsync();
 
                 if (photo != null)
                 {
-                    // Convertimos la foto a un formato visualizable en la web (Base64)
                     using var stream = await photo.OpenReadAsync();
                     using var memoryStream = new MemoryStream();
                     await stream.CopyToAsync(memoryStream);
                     var bytes = memoryStream.ToArray();
                     
                     FotoBase64 = $"data:image/jpeg;base64,{Convert.ToBase64String(bytes)}";
+                    
+                    // Limpiamos resultados anteriores
+                    ProductoDetectado = "";
+                    CantidadEntrante = 1;
                     StateHasChanged();
                 }
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"El usuario canceló o hubo un error: {ex.Message}");
+            Console.WriteLine($"Error de cámara: {ex.Message}");
         }
     }
 
-    void AnalizarConIA()
+    async Task AnalizarConIA()
     {
-        // 🚧 PRÓXIMO PASO: Aquí enviaremos la foto a nuestro motor de IA
-        Console.WriteLine("Enviando foto a la nube para su análisis...");
+        Analizando = true;
+        ProductoDetectado = "";
+        StateHasChanged();
+
+        // Llamamos al JavaScript para analizar la foto que acabamos de hacer
+        ProductoDetectado = await JS.InvokeAsync<string>("predecirImagen", FotoBase64);
+        
+        Analizando = false;
+        StateHasChanged();
+    }
+
+    void RegistrarEImprimir()
+    {
+        Console.WriteLine($"Añadidas {CantidadEntrante} unidades de '{ProductoDetectado}'.");
+        ProductoDetectado = ""; 
+        FotoBase64 = "";
     }
 }
