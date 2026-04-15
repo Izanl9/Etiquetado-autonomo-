@@ -1,0 +1,32 @@
+name: Compilar App Android
+
+on:
+  push:
+    branches: [ "main" ] # Se ejecuta al hacer git push a la rama main
+  workflow_dispatch: # Permite ejecutarlo manualmente desde la web
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 📥 Descargar el código
+      uses: actions/checkout@v4
+
+    - name: ⚙️ Configurar .NET 8
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: 🛠️ Instalar herramientas MAUI y Android
+      run: dotnet workload install maui-android
+
+    - name: 🚀 Compilar la aplicación (Release)
+      # Buscamos tu archivo de proyecto y lo compilamos en modo producción
+      run: dotnet publish ./EtiquetadoAuto/EtiquetadoAuto.csproj -f net8.0-android -c Release
+
+    - name: 📦 Guardar el archivo APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: LogisticaVision-APK
+        path: '**/*-Signed.apk'
