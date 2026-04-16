@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
 
     <PropertyGroup>
-        <TargetFrameworks>net8.0-android34.0</TargetFrameworks>
+        <TargetFrameworks>net8.0-android</TargetFrameworks>
         <SupportedOSPlatformVersion>24.0</SupportedOSPlatformVersion>
         <CheckEolWorkloads>false</CheckEolWorkloads>
 
