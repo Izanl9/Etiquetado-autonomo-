@@ -20,6 +20,10 @@ public class PrinterService
             string zpl = $"^XA^CF0,50^FO50,50^FD{nombre}^FS^BY3,3,100^FO50,120^BCN,100,Y,N,N^FDLOG-{codigo}^FS^XZ";
             byte[] buffer = System.Text.Encoding.ASCII.GetBytes(zpl);
             await stream.WriteAsync(buffer, 0, buffer.Length);
-        } catch (Exception ex) { /* Log error */ }
-    }
+        } catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error de impresión: {ex.Message}");
+            }
+        }
+    
 }
