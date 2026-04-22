@@ -9,4 +9,11 @@
 	<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 	<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 	<uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
+<application 
+    android:allowBackup="true" 
+    android:icon="@mipmap/appicon" 
+    android:roundIcon="@mipmap/appicon_round" 
+    android:supportsRtl="true" 
+    android:label="EtiquetadoAuto">
+</application>
 </manifest>
