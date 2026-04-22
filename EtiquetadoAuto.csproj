@@ -43,4 +43,16 @@
     </Compile>
 </ItemGroup>
 
+<ItemGroup>
+    <PackageReference Include="InTheHand.Net.Bluetooth" Version="4.0.34" />
+    <PackageReference Include="FirebaseDatabase.net" Version="4.2.0" />
+    
+    <PackageReference Include="Microsoft.Maui.Controls" Version="8.0.100" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="8.0.100" />
+    <PackageReference Include="Microsoft.Maui.Controls.Compatibility" Version="8.0.100" />
+</ItemGroup>
+
+<PropertyGroup>
+    <SkipValidateMauiImplicitPackageReferences>true</SkipValidateMauiImplicitPackageReferences>
+</PropertyGroup>
 </Project>
