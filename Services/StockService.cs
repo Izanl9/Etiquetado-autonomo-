@@ -2,30 +2,32 @@ using Firebase.Database;
 using Firebase.Database.Query;
 using EtiquetadoAuto.Models;
 
-namespace EtiquetadoAuto.Services;
-
-public class StockService
+namespace EtiquetadoAuto.Services
 {
-    private readonly FirebaseClient _fb = new FirebaseClient("https://TU-PROYECTO.firebaseio.com/");
-
-    public async Task ProcesarEscaneo(string code)
+    public class StockService
     {
-        bool esSalida = code.StartsWith("LOG-");
-        string idLimpio = esSalida ? code.Replace("LOG-", "") : code;
-        int cambio = esSalida ? -1 : 1;
+        private readonly FirebaseClient _firebase = new FirebaseClient("TU_URL_DE_FIREBASE_AQUI");
 
-        var p = (await _fb.Child("Stock").OnceAsListAsync<Product>())
-                .FirstOrDefault(x => x.Object.Id == idLimpio);
+        // ESTE ES EL NOMBRE QUE EL COMPILADOR NO ENCONTRABA:
+        public async Task<List<Product>> GetProductsAsync()
+        {
+            try
+            {
+                var products = await _firebase
+                    .Child("productos")
+                    .OnceAsync<Product>();
 
-        if (p != null) {
-            await _fb.Child("Stock").Child(p.Key).PatchAsync(new { Quantity = p.Object.Quantity + cambio });
-        } else if (!esSalida) {
-            await _fb.Child("Stock").PostAsync(new Product { Id = idLimpio, Quantity = 1, LastUpdate = DateTime.Now });
-            // Si es entrada nueva, mandamos a imprimir
-            await new PrinterService().Imprimir("Entrada", idLimpio);
+                return products.Select(item => new Product
+                {
+                    Id = item.Object.Id,
+                    Quantity = item.Object.Quantity,
+                    LastUpdate = item.Object.LastUpdate
+                }).ToList();
+            }
+            catch
+            {
+                return new List<Product>();
+            }
         }
     }
-
-    public async Task<List<Product>> GetStock() => 
-        (await _fb.Child("Stock").OnceAsListAsync<Product>()).Select(x => x.Object).ToList();
 }

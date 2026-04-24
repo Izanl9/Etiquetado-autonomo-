@@ -4,7 +4,7 @@
 @inject StockService StockService
 
 <div class="container mt-3">
-    <h4 class="mb-4">📋 Inventario (Nube)</h4>
+    <h4 class="mb-4"> Inventario (Nube)</h4>
 
     @if (productos == null)
     {
@@ -33,7 +33,7 @@
 </div>
 
 @code {
-    private List<Product> productos; // No lo inicialices aquí para poder mostrar el "Cargando..."
+private List<Product> productos = new(); 
     private string errorMessage;
 
     protected override async Task OnInitializedAsync()
