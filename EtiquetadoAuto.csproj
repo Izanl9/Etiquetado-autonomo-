@@ -9,7 +9,7 @@
         <SingleProject>true</SingleProject>
         <ImplicitUsings>enable</ImplicitUsings>
         <EnableDefaultCssItems>false</EnableDefaultCssItems>
-
+        <GenerateStaticWebAssetsManifest>true</GenerateStaticWebAssetsManifest>
         <ApplicationTitle>EtiquetadoAuto</ApplicationTitle>
         <ApplicationId>com.companyname.etiquetadoauto</ApplicationId>
         <ApplicationIdGuid>060F93D4-1600-4B28-A03D-2A761B4949A9</ApplicationIdGuid>

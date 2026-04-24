@@ -1,13 +1,14 @@
-﻿namespace EtiquetadoAuto;
+﻿using Microsoft.Maui.Controls;
+
+namespace EtiquetadoAuto;
 
 public partial class App : Application
 {
     public App()
     {
-        // Esta línea es la que une el C# con el diseño del App.xaml
         InitializeComponent();
 
-        // Esta línea define que la navegación principal será el AppShell
+        // Esto le dice a la app que use el sistema de pestañas
         MainPage = new AppShell();
     }
 }
