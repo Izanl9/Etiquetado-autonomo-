@@ -5,9 +5,7 @@
        xmlns:pages="clr-namespace:EtiquetadoAuto.Pages"
        Shell.TabBarBackgroundColor="White"
        Shell.TabBarForegroundColor="#2196F3"
-       Shell.TabBarUnselectedColor="#757575"
-       Shell.TitleColor="Black"
-       Shell.BackgroundColor="#2196F3">
+       Shell.TabBarUnselectedColor="#757575">
 
     <TabBar>
         <Tab Title="Escáner">
