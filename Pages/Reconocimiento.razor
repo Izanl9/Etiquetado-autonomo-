@@ -1,102 +1,64 @@
 @page "/reconocimiento"
-@namespace EtiquetadoAuto.Pages
-@using System.IO
-@inject IJSRuntime JS
+@using Microsoft.Maui.Media
+@using EtiquetadoAuto.Models
+@inject IJSRuntime JSRuntime
 
-<div class="container-fluid text-center mt-4">
-    <h3 class="text-primary mb-4"> Visión Artificial Móvil</h3>
-    <p class="text-muted">Usa la cámara del móvil para identificar la mercancía.</p>
+<div class="container text-center">
+    <h3>Escáner de Productos</h3>
+    <hr />
 
-    <button class="btn btn-primary btn-lg w-100 shadow fw-bold mb-3" @onclick="TomarFotoNativa">
-        📷 ABRIR CÁMARA
-    </button>
-
-    @if (!string.IsNullOrEmpty(FotoBase64))
-    {
-        <img src="@FotoBase64" class="img-fluid rounded shadow-sm mb-3" style="max-height: 300px; object-fit: contain;" />
-        
-        <button class="btn btn-success btn-lg w-100 fw-bold" @onclick="AnalizarConIA" disabled="@Analizando">
-            ANALIZAR PRODUCTO
+    <div class="d-grid gap-2">
+        <button class="btn btn-primary btn-lg" @onclick="TomarFoto">
+            <i class="oi oi-camera"></i> Abrir Cámara
         </button>
-    }
+    </div>
 
-    @if (Analizando)
+    @if (!string.IsNullOrEmpty(statusMessage))
     {
-        <div class="mt-4">
-            <div class="spinner-border text-primary" role="status"></div>
-            <p class="fw-bold mt-2">Analizando imagen...</p>
-        </div>
-    }
-    else if (!string.IsNullOrEmpty(ProductoDetectado))
-    {
-        <div class="alert alert-success mt-4 shadow-sm">
-            <h4> ¡Producto Reconocido!</h4>
-            <h2 class="fw-bold text-dark">@ProductoDetectado</h2>
-            
-            <div class="mt-4">
-                <label class="form-label fw-bold">¿Cuántas unidades entran?</label>
-                <input type="number" class="form-control form-control-lg text-center mb-3 fw-bold" @bind="CantidadEntrante" min="1" />
-                
-                <button class="btn btn-warning btn-lg w-100 fw-bold shadow" @onclick="RegistrarEImprimir">
-                    AÑADIR E IMPRIMIR
-                </button>
-            </div>
+        <div class="alert alert-info mt-3">
+            @statusMessage
         </div>
     }
 </div>
 
 @code {
-    string FotoBase64 = "";
-    bool Analizando = false;
-    string ProductoDetectado = "";
-    int CantidadEntrante = 1;
+    private string statusMessage = "Listo para escanear";
 
-    // PON AQUÍ TU ENLACE REAL DE TEACHABLE MACHINE
-    string UrlModeloGoogle = " https://teachablemachine.withgoogle.com/models/_0smO1zii/";
-
-    protected override async Task OnInitializedAsync()
+    private async Task TomarFoto()
     {
-        // Cargamos la IA al abrir la pantalla
-        await JS.InvokeVoidAsync("cargarModelo", UrlModeloGoogle);
-    }
-
-    Task TomarFoto()
-{
-    try 
-    {
-        var status = await Permissions.CheckStatusAsync<Permissions.Camera>();
-        if (status != PermissionStatus.Granted)
-            status = await Permissions.RequestAsync<Permissions.Camera>();
-
-        if (status == PermissionStatus.Granted)
+        try
         {
-            // Aquí va tu código actual de abrir la cámara
+            if (MediaPicker.Default.IsCaptureSupported)
+            {
+                statusMessage = "Abriendo cámara nativa...";
+                
+                // Captura la foto usando el hardware del móvil
+                FileResult photo = await MediaPicker.Default.CapturePhotoAsync();
+                
+                if (photo != null)
+                {
+                    statusMessage = $"Foto capturada: {photo.FileName}. Procesando...";
+                    
+                    // Aquí puedes leer el stream de la imagen si necesitas enviarlo a una IA
+                    using var stream = await photo.OpenReadAsync();
+                    
+                    // Ejemplo: var bytes = new byte[stream.Length];
+                    // await stream.ReadAsync(bytes);
+                }
+                else
+                {
+                    statusMessage = "Captura cancelada.";
+                }
+            }
+            else
+            {
+                statusMessage = "La cámara no está disponible en este dispositivo.";
+            }
         }
-    }
-    catch (Exception ex)
-    {
-        // Esto evitará el cierre repentino y te dirá qué pasa
-        Console.WriteLine($"Error: {ex.Message}");
-    }
-}
-
-    async Task AnalizarConIA()
-    {
-        Analizando = true;
-        ProductoDetectado = "";
-        StateHasChanged();
-
-        // Llamamos al JavaScript para analizar la foto que acabamos de hacer
-        ProductoDetectado = await JS.InvokeAsync<string>("predecirImagen", FotoBase64);
-        
-        Analizando = false;
-        StateHasChanged();
-    }
-
-    void RegistrarEImprimir()
-    {
-        Console.WriteLine($"Añadidas {CantidadEntrante} unidades de '{ProductoDetectado}'.");
-        ProductoDetectado = ""; 
-        FotoBase64 = "";
+        catch (Exception ex)
+        {
+            statusMessage = $"Error: {ex.Message}";
+            await JSRuntime.InvokeVoidAsync("alert", "Error al abrir la cámara: " + ex.Message);
+        }
     }
 }

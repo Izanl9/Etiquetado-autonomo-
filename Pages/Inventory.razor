@@ -1,41 +1,52 @@
 @page "/inventory"
-@inject EtiquetadoAuto.Services.StockService StockService
+@using EtiquetadoAuto.Models
+@using EtiquetadoAuto.Services
+@inject StockService StockService
 
-<h3>Inventario en la Nube</h3>
+<div class="container">
+    <h3>Inventario en la Nube</h3>
 
-@if (productos == null)
-{
-    <p>Cargando datos de Firebase...</p>
-}
-else
-{
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Código</th>
-                <th>Nombre</th>
-                <th>Cantidad</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var prod in productos)
-            {
+    @if (productos == null)
+    {
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Cargando...</span>
+        </div>
+    }
+    else if (productos.Count == 0)
+    {
+        <p>No hay productos registrados en el stock.</p>
+    }
+    else
+    {
+        <table class="table table-striped mt-3">
+            <thead>
                 <tr>
-                    <td>@prod.Codigo</td>
-                    <td>@prod.Nombre</td>
-                    <td>@prod.Cantidad</td>
+                    <th>Código</th>
+                    <th>Nombre</th>
+                    <th>Stock</th>
+                    <th>Última Actualización</th>
                 </tr>
-            }
-        </tbody>
-    </table>
-}
+            </thead>
+            <tbody>
+                @foreach (var prod in productos)
+                {
+                    <tr>
+                        <td>@prod.Codigo</td>
+                        <td>@prod.Nombre</td>
+                        <td>@prod.Quantity</td>
+                        <td>@prod.LastUpdate.ToShortDateString()</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
 
 @code {
-    private List<EtiquetadoAuto.Models.Producto> productos;
+    private List<Producto> productos;
 
     protected override async Task OnInitializedAsync()
     {
-        // Aquí llamamos a la función que mencionamos antes
         productos = await StockService.GetStockAsync();
     }
 }
