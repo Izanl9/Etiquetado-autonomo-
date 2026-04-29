@@ -8,8 +8,7 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 
-        <EnableDefaultSdkItems>true</EnableDefaultSdkItems>
-        <StaticWebAssetsEnabled>true</StaticWebAssetsEnabled>
+		<StaticWebAssetsEnabled>true</StaticWebAssetsEnabled>
 
 		<ApplicationTitle>EtiquetadoAuto</ApplicationTitle>
 		<ApplicationId>com.companyname.etiquetadoauto</ApplicationId>
@@ -25,9 +24,12 @@
 		<PackageReference Include="Microsoft.Maui.Controls.Compatibility" Version="8.0.3" />
 		<PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="8.0.3" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="8.0.0" />
+		
 		<PackageReference Include="System.Text.Json" Version="8.0.5" />
 		<PackageReference Include="QuestPDF" Version="2024.10.1" />
-        </ItemGroup>
+		
+		<PackageReference Include="InTheHand.Net.Bluetooth" Version="4.0.37" />
+	</ItemGroup>
 
 	<ItemGroup>
 	  <MauiAsset Include="Resources\Raw\**" />
