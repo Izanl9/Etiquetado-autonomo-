@@ -2,42 +2,38 @@ name: Compilar App Android
 
 on:
   push:
-    branches: [ "main" ] # Se ejecuta al hacer git push a la rama main
-  workflow_dispatch: # Permite ejecutarlo manualmente desde la web
+    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name:  Descargar el código
+    - name: Descargar el código
       uses: actions/checkout@v4
+
+    - name: Forzar .NET 8 (Evitar .NET 10)
+      run: echo '{"sdk":{"version":"8.0.x","rollForward":"latestFeature"}}' > global.json
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '8.0.x'
-    - name: Install MAUI Workloads
-      run: dotnet workload install android wasm-tools --ignore-failed-sources
 
-    - name: Restore dependencies
+    - name: Instalar Workloads de MAUI
+      run: dotnet workload install maui-android wasm-tools --ignore-failed-sources
+
+    - name: Restaurar dependencias
       run: dotnet restore EtiquetadoAuto.csproj
 
-    - name: Build and Publish
-      run: dotnet publish EtiquetadoAuto.csproj -f net8.0-android -c Release -p:RuntimeIdentifier=android-arm64 -p:StaticWebAssetsEnabled=true
-    - name: Install dependencies
-      run: dotnet restore EtiquetadoAuto.csproj
-    - name: Poner candado a .NET 8 (Bloquear .NET 10)
-      run: echo '{"sdk":{"version":"8.0.0","rollForward":"latestFeature"}}' > global.json
-
-    - name: Instalar herramientas MAUI y Android
-      run: dotnet workload install maui-android
-
-    - name: Compilar la aplicación (Release)
+    - name: Compilar APK (Release)
       run: dotnet publish EtiquetadoAuto.csproj -f net8.0-android -c Release -p:RuntimeIdentifier=android-arm64 -p:StaticWebAssetsEnabled=true
 
     - name: Guardar el archivo APK
       uses: actions/upload-artifact@v4
       with:
         name: LogisticaVision-APK
-        path: '**/*-Signed.apk'
+        path: |
+          **/bin/Release/net8.0-android/publish/*.apk
+          **/*.apk
