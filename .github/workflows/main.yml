@@ -30,13 +30,16 @@ jobs:
     - name: Instalar Workloads
       run: dotnet workload install maui-android wasm-tools
 
-    - name: Compilar APK (Build Release)
-      # Usamos BUILD en lugar de PUBLISH para evitar el conflicto de StaticWebAssets
-      run: dotnet build EtiquetadoAuto.csproj -c Release -f net8.0-android /p:AndroidKeyStore=false
+    - name: Limpiar y Compilar
+      # Añadimos --no-cache para evitar que use archivos temporales corruptos
+      run: |
+        dotnet restore EtiquetadoAuto.csproj --no-cache
+        dotnet publish EtiquetadoAuto.csproj -f net8.0-android -c Release
 
     - name: Guardar el archivo APK
       uses: actions/upload-artifact@v4
       with:
         name: LogisticaVision-APK
         path: |
+          **/bin/Release/net8.0-android/publish/*.apk
           **/bin/Release/net8.0-android/*.apk
