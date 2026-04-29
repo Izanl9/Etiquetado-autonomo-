@@ -13,10 +13,7 @@ jobs:
     - name: Descargar el código
       uses: actions/checkout@v4
 
-    - name: Forzar .NET 8 (Evitar .NET 10)
-      run: echo '{"sdk":{"version":"8.0.x","rollForward":"latestFeature"}}' > global.json
-
-    - name: Setup .NET
+    - name: Setup .NET 8
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '8.0.x'
@@ -25,10 +22,12 @@ jobs:
       run: dotnet workload install maui-android wasm-tools --ignore-failed-sources
 
     - name: Restaurar dependencias
-      run: dotnet restore EtiquetadoAuto.csproj
+      # Añadimos el flag para ignorar el error de soporte de .NET 8
+      run: dotnet restore EtiquetadoAuto.csproj -p:CheckEolTargetFramework=false
 
     - name: Compilar APK (Release)
-      run: dotnet publish EtiquetadoAuto.csproj -f net8.0-android -c Release -p:RuntimeIdentifier=android-arm64 -p:StaticWebAssetsEnabled=true
+      # También añadimos el flag aquí
+      run: dotnet publish EtiquetadoAuto.csproj -f net8.0-android -c Release -p:RuntimeIdentifier=android-arm64 -p:StaticWebAssetsEnabled=true -p:CheckEolTargetFramework=false
 
     - name: Guardar el archivo APK
       uses: actions/upload-artifact@v4
