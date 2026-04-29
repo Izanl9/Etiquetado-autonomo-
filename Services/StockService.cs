@@ -9,15 +9,15 @@ namespace EtiquetadoAuto.Services
         private readonly FirebaseClient _firebase = new FirebaseClient("TU_URL_DE_FIREBASE_AQUI");
 
         // ESTE ES EL NOMBRE QUE EL COMPILADOR NO ENCONTRABA:
-        public async Task<List<Product>> GetProductsAsync()
+        public async Task<List<Producto>> GetProductosAsync()
         {
             try
             {
-                var products = await _firebase
-                    .Child("productos")
-                    .OnceAsync<Product>();
+                var Productos = await _firebase
+                    .Child("Productos")
+                    .OnceAsync<Producto>();
 
-                return products.Select(item => new Product
+                return Productos.Select(item => new Producto
                 {
                     Id = item.Object.Id,
                     Quantity = item.Object.Quantity,
@@ -26,7 +26,7 @@ namespace EtiquetadoAuto.Services
             }
             catch
             {
-                return new List<Product>();
+                return new List<Producto>();
             }
         }
     }
