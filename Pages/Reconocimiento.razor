@@ -1,57 +1,68 @@
 @page "/reconocimiento"
-@using Microsoft.Maui.Media
 @using EtiquetadoAuto.Models
+@using EtiquetadoAuto.Services
+@inject StockService StockService
 @inject IJSRuntime JSRuntime
 
-<div class="container text-center">
-    <h3>Escáner de Productos</h3>
-    <hr />
+<div class="container">
+    <h3>Escaneo de Albarán</h3>
+    
+    <button class="btn btn-primary w-100 mb-3" @onclick="CapturarAlbaran">
+        <i class="oi oi-camera"></i> Escanear Albarán
+    </button>
 
-    <div class="d-grid gap-2">
-        <button class="btn btn-primary btn-lg" @onclick="TomarFoto">
-            <i class="oi oi-camera"></i> Abrir Cámara
-        </button>
-    </div>
-
-    @if (!string.IsNullOrEmpty(statusMessage))
+    @if (productosDetectados.Any())
     {
-        <div class="alert alert-info mt-3">
-            @statusMessage
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-success text-white">Productos Detectados</div>
+            <ul class="list-group list-group-flush">
+                @foreach (var p in productosDetectados)
+                {
+                    <li class="list-group-item d-flex justify-content-between">
+                        @p.Nombre <span>x@p.Cantidad</span>
+                    </li>
+                }
+            </ul>
         </div>
+
+        <button class="btn btn-outline-danger w-100" @onclick="GenerarPdfEtiquetas">
+            <i class="oi oi-document"></i> Generar PDF de Etiquetas
+        </button>
     }
 </div>
 
 @code {
-    private string statusMessage = "Listo para escanear";
+    private List<Producto> productosDetectados = new();
 
-    private async Task TomarFoto()
+    private async Task CapturarAlbaran()
     {
         try
         {
-            if (MediaPicker.Default.IsCaptureSupported)
+            var photo = await MediaPicker.Default.CapturePhotoAsync();
+            if (photo == null) return;
+
+            // Aquí iría el procesamiento ML Kit. 
+            // Por ahora simulamos la extracción de texto del OCR:
+            productosDetectados = new List<Producto>
             {
-                statusMessage = "Abriendo cámara...";
-                StateHasChanged(); // Actualiza el mensaje en pantalla
+                new Producto { Nombre = "Caja Tornillos M8", Cantidad = 10 },
+                new Producto { Nombre = "Arandelas Acero", Cantidad = 5 }
+            };
 
-                FileResult photo = await MediaPicker.Default.CapturePhotoAsync();
-                
-                if (photo != null)
-                {
-                    statusMessage = "Foto recibida. Analizando...";
-                    StateHasChanged(); // Actualiza para que el usuario vea el cambio
-
-                    // SIMULACIÓN DE PROCESADO
-                    await Task.Delay(2000); 
-                    
-                    statusMessage = "Producto reconocido: Objeto de prueba";
-                    StateHasChanged();
-                }
-            }
+            // Actualizamos el inventario local automáticamente
+            await StockService.ActualizarDesdeAlbaran(productosDetectados);
+            
+            await JSRuntime.InvokeVoidAsync("alert", "Inventario actualizado y albarán procesado.");
         }
         catch (Exception ex)
         {
-            statusMessage = $"Error: {ex.Message}";
-            StateHasChanged();
+            await JSRuntime.InvokeVoidAsync("alert", "Error: " + ex.Message);
         }
+    }
+
+    private async Task GenerarPdfEtiquetas()
+    {
+        // Lógica para crear el PDF (usando una librería como QuestPDF o iText)
+        await JSRuntime.InvokeVoidAsync("alert", "Generando PDF con " + productosDetectados.Sum(p => p.Cantidad) + " etiquetas...");
     }
 }

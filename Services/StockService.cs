@@ -1,31 +1,34 @@
+using System.Text.Json;
 using EtiquetadoAuto.Models;
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
-namespace EtiquetadoAuto.Services
+namespace EtiquetadoAuto.Services;
+
+public class StockService
 {
-    public class StockService
-    {
-        public async Task<List<Producto>> GetStockAsync()
-        {
-            try
-            {
-                // DATOS DE PRUEBA (Sustituye la lista vacía por esta)
-                var listaPrueba = new List<Producto>
-                {
-                    new Producto { Id = "1", Codigo = "75010203", Nombre = "Caja de Leche", Quantity = 50, LastUpdate = DateTime.Now },
-                    new Producto { Id = "2", Codigo = "84123456", Nombre = "Detergente 1L", Quantity = 12, LastUpdate = DateTime.Now },
-                    new Producto { Id = "3", Codigo = "12345678", Nombre = "Paquete Arroz", Quantity = 100, LastUpdate = DateTime.Now }
-                };
+    private string filePath = Path.Combine(FileSystem.AppDataDirectory, "inventario.json");
 
-                await Task.Delay(500); // Simula latencia de red
-                return listaPrueba;
-            }
-            catch (Exception)
-            {
-                return new List<Producto>();
-            }
+    public async Task<List<Producto>> GetStockAsync()
+    {
+        if (!File.Exists(filePath)) return new List<Producto>();
+        
+        var json = await File.ReadAllTextAsync(filePath);
+        return JsonSerializer.Deserialize<List<Producto>>(json) ?? new List<Producto>();
+    }
+
+    public async Task ActualizarDesdeAlbaran(List<Producto> nuevosProductos)
+    {
+        var stockActual = await GetStockAsync();
+
+        foreach (var nuevo in nuevosProductos)
+        {
+            var existente = stockActual.FirstOrDefault(p => p.Nombre.ToLower() == nuevo.Nombre.ToLower());
+            if (existente != null)
+                existente.Cantidad += nuevo.Cantidad;
+            else
+                stockActual.Add(nuevo);
         }
+
+        var json = JsonSerializer.Serialize(stockActual);
+        await File.WriteAllTextAsync(filePath, json);
     }
 }

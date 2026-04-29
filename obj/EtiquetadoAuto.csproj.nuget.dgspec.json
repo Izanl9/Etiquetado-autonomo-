@@ -57,6 +57,14 @@
               "target": "Package",
               "version": "[8.0.100, )"
             },
+            "Microsoft.Extensions.Logging.Debug": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            },
+            "Microsoft.ML.OnnxRuntime": {
+              "target": "Package",
+              "version": "[1.25.1, )"
+            },
             "Microsoft.Maui.Controls": {
               "target": "Package",
               "version": "[8.0.100, )"

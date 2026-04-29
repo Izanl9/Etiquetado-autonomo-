@@ -27,6 +27,10 @@
 		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="8.0.0" />
 		<PackageReference Include="InTheHand.Net.Bluetooth" Version="4.0.34" />
 		<PackageReference Include="FirebaseDatabase.net" Version="4.2.0" />
+		<PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.25.1" />
+    	<PackageReference Include="System.Text.Json" Version="8.0.0" />
+    	<PackageReference Include="QuestPDF" Version="2023.12.0" />
+  		<PackageReference Include="Xamarin.GooglePlayServices.MLKit.TextRecognition" Version="116.0.0.1" />
 	</ItemGroup>
 
 </Project>
