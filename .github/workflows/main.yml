@@ -20,15 +20,16 @@ jobs:
             "version": "8.0.403",
             "rollForward": "latestFeature"
           }
-        }' > global.json
-    - name: Restaurar dependencias
-      run: |
-        dotnet nuget add source https://api.nuget.org/v3/index.json -n nuget.org || true
-        dotnet restore EtiquetadoAuto.csproj --no-cache
+        }' > global.json 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '8.0.403'
+        
+    - name: Restaurar dependencias
+      run: |
+        dotnet nuget add source https://api.nuget.org/v3/index.json -n nuget.org || true
+        dotnet restore EtiquetadoAuto.csproj --no-cache
 
     - name: Instalar Workloads
       run: dotnet workload install maui-android wasm-tools
