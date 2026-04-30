@@ -13,45 +13,34 @@ jobs:
     - name: Descargar el código
       uses: actions/checkout@v4
 
-    - name: Configurar .NET 8 (Versión exacta)
+    - name: Configurar .NET 8
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '8.0.403' # Forzamos una versión estable de la rama 8
+        dotnet-version: '8.0.x'
 
-    - name: Crear global.json
-      # Esto obliga a cualquier comando dotnet a usar la versión 8, ignorando la 10
-      run: |
-        echo '{
-          "sdk": {
-            "version": "8.0.403",
-            "rollForward": "latestFeature"
-          }
-        }' > global.json
-
-    - name: Crear NuGet.config
-      run: |
-        echo '<?xml version="1.0" encoding="utf-8"?>
-        <configuration>
-          <packageSources>
-            <clear />
-            <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-          </packageSources>
-        </configuration>' > NuGet.config
-
-    - name: Instalar Workloads MAUI
+    - name: Instalar Workload Android
       run: dotnet workload install maui-android
 
-    - name: Restaurar dependencias
-      # Añadimos el flag para ignorar el aviso de fin de soporte (EOL)
-      run: dotnet restore EtiquetadoAuto.csproj --configfile NuGet.config -p:CheckEolTargetFramework=false
+    - name: Restaurar con Source Directo
+      # Aquí forzamos a dotnet a mirar SÓLO en la web oficial, ignorando cualquier caché rota del servidor
+      run: |
+        dotnet restore EtiquetadoAuto.csproj \
+          --source "https://api.nuget.org/v3/index.json" \
+          -p:CheckEolTargetFramework=false
 
-    - name: Compilar APK (Release)
-      run: dotnet publish EtiquetadoAuto.csproj -f net8.0-android -c Release -p:AndroidKeyStore=false -p:CheckEolTargetFramework=false --no-restore
+    - name: Publicar APK
+      run: |
+        dotnet publish EtiquetadoAuto.csproj \
+          -f net8.0-android \
+          -c Release \
+          -p:AndroidKeyStore=false \
+          -p:CheckEolTargetFramework=false \
+          --no-restore
 
-    - name: Guardar el archivo APK
+    - name: Subir Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: LogisticaVision-APK
+        name: App-Etiquetado-OCR
         path: |
           **/bin/Release/net8.0-android/publish/*.apk
           **/bin/Release/net8.0-android/*.apk

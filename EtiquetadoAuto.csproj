@@ -28,7 +28,7 @@
 		<PackageReference Include="QuestPDF" Version="2024.10.1" />
 		<PackageReference Include="InTheHand.Net.Bluetooth" Version="4.1.40" />
 		
-		<PackageReference Include="Xamarin.GooglePlayServices.MLKit.TextRecognition" Version="116.0.0" />
+		<PackageReference Include="Xamarin.GooglePlayServices.MLKit.TextRecognition" Version="116.0.0.5" />
 	</ItemGroup>
 
 	<ItemGroup>
