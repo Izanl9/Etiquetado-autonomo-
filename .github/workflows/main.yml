@@ -3,12 +3,10 @@ name: Compilar App Android
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
     - name: Descargar el código
       uses: actions/checkout@v4
@@ -18,22 +16,17 @@ jobs:
       with:
         dotnet-version: '8.0.x'
 
-    - name: Instalar Workload Android
-      run: dotnet workload install maui-android
+    - name: Limpiar y Configurar NuGet
+      run: |
+        dotnet nuget locals all --clear
+        dotnet workload install maui-android
 
-    - name: Compilar APK
-      # Usamos -p:CheckEolTargetFramework=false por si acaso el .csproj no fuera suficiente
+    - name: Publicar APK
       run: |
         dotnet publish EtiquetadoAuto.csproj \
           -f net8.0-android \
           -c Release \
           -p:AndroidKeyStore=false \
-          -p:CheckEolTargetFramework=false
-
-    - name: Guardar APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: Etiquetado-OCR-APK
-        path: |
-          **/bin/Release/net8.0-android/publish/*.apk
-          **/bin/Release/net8.0-android/*.apk
+          -p:CheckEolTargetFramework=false \
+          -p:NoWarn=NETSDK1202 \
+          --source https://api.nuget.org/v3/index.json
