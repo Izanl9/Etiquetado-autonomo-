@@ -16,6 +16,8 @@
 		<ApplicationVersion>1</ApplicationVersion>
 
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">23.0</SupportedOSPlatformVersion>
+		
+		<RestoreSources>https://api.nuget.org/v3/index.json;$(RestoreSources)</RestoreSources>
 	</PropertyGroup>
 
 	<ItemGroup>

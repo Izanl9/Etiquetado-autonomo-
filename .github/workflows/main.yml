@@ -19,25 +19,17 @@ jobs:
         dotnet-version: '8.0.x'
 
     - name: Instalar Workload Android
-      # El comando install no acepta -p, se usa solo para instalar la plataforma
       run: dotnet workload install maui-android
 
-    - name: Restaurar dependencias
-      # Aquí sí usamos el flag para saltar el error de soporte (EOL)
-      run: |
-        dotnet restore EtiquetadoAuto.csproj \
-          --source "https://api.nuget.org/v3/index.json" \
-          -p:CheckEolTargetFramework=false
-
-    - name: Publicar APK
-      # Aquí también es necesario el flag
+    - name: Restaurar y Publicar
+      # Combinamos para que el flag de CheckEol se aplique a todo el proceso
       run: |
         dotnet publish EtiquetadoAuto.csproj \
           -f net8.0-android \
           -c Release \
           -p:AndroidKeyStore=false \
           -p:CheckEolTargetFramework=false \
-          --no-restore
+          -p:RestoreIgnoreFailedSources=true
 
     - name: Guardar APK
       uses: actions/upload-artifact@v4
