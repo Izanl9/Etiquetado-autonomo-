@@ -10,6 +10,9 @@
 
 		<CheckEolTargetFramework>false</CheckEolTargetFramework>
 		<NoWarn>$(NoWarn);NETSDK1202;NETSDK1135;NETSDK1140</NoWarn>
+		
+		<TargetPlatformVersion>21.0</TargetPlatformVersion>
+		<SupportedOSPlatformVersion>21.0</SupportedOSPlatformVersion>
 
 		<ApplicationTitle>EtiquetadoAuto</ApplicationTitle>
 		<ApplicationId>com.companyname.etiquetadoauto</ApplicationId>
