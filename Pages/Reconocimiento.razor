@@ -14,7 +14,7 @@
             <h4 class="mb-0"><i class="oi oi-camera"></i> Escaneo de Albarán</h4>
         </div>
         <div class="card-body text-center">
-            <p class="text-secondary">Escanee libremente. El sistema corrige automáticamente la inclinación y los textos partidos.</p>
+            <p class="text-secondary">Tome la foto libremente. El sistema unirá las líneas rotas por proximidad.</p>
             
             @if (isProcessing)
             {
@@ -62,17 +62,25 @@
 </div>
 
 @code {
-    // Estructura adaptada para cálculos geométricos de rotación
-    public class InfoLinea 
+    // Estructura limpia para el análisis de proximidad sin coordenadas globales distorsionadas
+    public class RawLine 
     {
         public string Texto { get; set; } = "";
         public int Top { get; set; }
         public int Bottom { get; set; }
         public int Left { get; set; }
-        public int Right { get; set; }
-        public double CenterX { get; set; }
-        public double CenterY { get; set; }
-        public double CenterYCorregido { get; set; }
+        public int CenterY => (Top + Bottom) / 2;
+        public bool Procesado { get; set; } = false;
+    }
+
+    // Modelo temporal para reconstruir los productos fila por fila
+    public class ProductoEnConstruccion
+    {
+        public int Cantidad { get; set; }
+        public string Nombre { get; set; } = "";
+        public int Top { get; set; }
+        public int Bottom { get; set; }
+        public int CenterY { get; set; }
     }
 
     private List<Producto> productosDetectados = new();
@@ -90,7 +98,7 @@
             var photo = await MediaPicker.CapturePhotoAsync();
             if (photo == null) return;
 
-            estadoMensaje = "Analizando texto...";
+            estadoMensaje = "Procesando filas de material...";
             StateHasChanged(); 
 
             #if ANDROID
@@ -109,7 +117,7 @@
             var resultObj = await tcs.Task;
             var visionText = (Xamarin.Google.MLKit.Vision.Text.Text)resultObj;
             
-            ProcesarTextoMejorado(visionText);
+            ProcesarTextoLocal(visionText);
             #else
             await JSRuntime.InvokeVoidAsync("alert", "Funcionalidad disponible en Android.");
             #endif
@@ -126,200 +134,196 @@
     }
 
     #if ANDROID
-    private void ProcesarTextoMejorado(Xamarin.Google.MLKit.Vision.Text.Text visionText)
+    private void ProcesarTextoLocal(Xamarin.Google.MLKit.Vision.Text.Text visionText)
     {
         productosDetectados.Clear();
-        var todasLasLineas = new List<InfoLinea>();
-        
-        double sumaSlopes = 0;
-        int contSlopes = 0;
+        var todasLasLineas = new List<RawLine>();
 
-        // 1. EXTRAER LÍNEAS Y CALCULAR LA INCLINACIÓN (SLOPE) REAL DE LA FOTO
+        // 1. Extraer todas las líneas detectadas por la cámara filtrando la basura obvia
         foreach (var block in visionText.TextBlocks)
         {
             foreach (var line in block.Lines)
             {
-                var box = line.BoundingBox;
-                if (box == null) continue;
+                string txt = line.Text.Trim();
+                if (string.IsNullOrEmpty(txt)) continue;
 
-                double cx = (box.Left + box.Right) / 2.0;
-                double cy = (box.Top + box.Bottom) / 2.0;
-                double lineSlope = 0;
+                string minus = txt.ToLower()
+                    .Replace("à", "a").Replace("á", "a").Replace("è", "e").Replace("é", "e")
+                    .Replace("í", "i").Replace("ò", "o").Replace("ó", "o").Replace("ú", "u");
 
-                // Calculamos el ángulo basándonos en los vectores de las esquinas de cada línea escrita
-                var corners = line.GetCornerPoints();
-                if (corners != null && corners.Length >= 2)
+                // Filtro directo de cabeceras, empresas y datos de control
+                if (minus.Contains("albara") || minus.Contains("seditesa") || minus.Contains("sintesis") ||
+                    minus.Contains("www") || minus.Contains("@") || minus.Contains(".com") ||
+                    minus.Contains("izan") || minus.Contains("lecina") || minus.Contains("carrer") ||
+                    minus.Contains("telf") || minus.Contains("telefon") || minus.Contains("fecha") || minus.Contains("data") ||
+                    minus.Contains("quantitat") || minus.Contains("descripci") || minus.Contains("nro") || minus.Contains("comanda") ||
+                    minus.Contains("pag.") || minus.Contains("pagina") || minus.Contains("cliente"))
                 {
-                    double dx = corners[1].X - corners[0].X;
-                    double dy = corners[1].Y - corners[0].Y;
-                    if (Math.Abs(dx) > 15)
-                    {
-                        lineSlope = dy / dx;
-                        if (Math.Abs(lineSlope) < 0.5) // Evitamos falsos positivos de líneas verticales
-                        {
-                            sumaSlopes += lineSlope;
-                            contSlopes++;
-                        }
-                    }
+                    continue;
                 }
 
-                todasLasLineas.Add(new InfoLinea { 
-                    Texto = line.Text.Trim(), 
-                    Top = box.Top,
-                    Bottom = box.Bottom,
-                    Left = box.Left,
-                    Right = box.Right,
-                    CenterX = cx,
-                    CenterY = cy
+                todasLasLineas.Add(new RawLine {
+                    Texto = txt,
+                    Top = line.BoundingBox.Top,
+                    Bottom = line.BoundingBox.Bottom,
+                    Left = line.BoundingBox.Left
                 });
             }
         }
 
         if (!todasLasLineas.Any()) return;
 
-        // Inclinación promedio detectada en el papel escrito
-        double avgSlope = contSlopes > 0 ? sumaSlopes / contSlopes : 0;
+        // Listas de clasificación para el motor de proximidad
+        var lineasCombinadas = new List<RawLine>();  // Ej: "3 Purgadores de vapor" o "Filtro 2"
+        var lineasCantidadSolo = new List<RawLine>(); // Ej: "3" (Columna separada)
+        var lineasTextoSolo = new List<RawLine>();    // Ej: "Purgadores de vapor"
 
-        // ESTABILIZACIÓN: Enderezamos virtualmente el eje vertical Y restando la desviación horizontal
-        foreach (var l in todasLasLineas)
+        // 2. CLASIFICACIÓN DE LÍNEAS MEDIANTE PATRONES
+        foreach (var line in todasLasLineas)
         {
-            l.CenterYCorregido = l.CenterY - (avgSlope * l.CenterX);
-        }
+            string txt = line.Texto;
+            var mIzq = System.Text.RegularExpressions.Regex.Match(txt, @"^(\d{1,3})\s+(.+)$");
+            var mDer = System.Text.RegularExpressions.Regex.Match(txt, @"^(.+)\s+(\d{1,3})$");
+            var mSoloNum = System.Text.RegularExpressions.Regex.Match(txt, @"^\d{1,3}$");
 
-        // 2. AGRUPACIÓN EN FILAS USANDO LAS COORDENADAS YA ENDEREZADAS
-        var ordenadasPorY = todasLasLineas.OrderBy(l => l.CenterYCorregido).ToList();
-        var filas = new List<List<InfoLinea>>();
-
-        foreach (var linea in ordenadasPorY)
-        {
-            bool asignada = false;
-            foreach (var fila in filas)
+            if (mSoloNum.Success)
             {
-                double centroFilaCorregido = fila.Average(l => l.CenterYCorregido);
-                
-                // Con el giro neutralizado matemáticamente, 20 píxeles de margen es súper preciso
-                if (Math.Abs(linea.CenterYCorregido - centroFilaCorregido) < 20)
-                {
-                    fila.Add(linea);
-                    asignada = true;
-                    break;
-                }
+                lineasCantidadSolo.Add(line);
             }
-
-            if (!asignada)
+            else if (mIzq.Success || mDer.Success)
             {
-                filas.Add(new List<InfoLinea> { linea });
-            }
-        }
-
-        // Ordenamos las filas finales de arriba a abajo del papel
-        var filasOrdenadas = filas.OrderBy(f => f.Average(l => l.CenterYCorregido)).ToList();
-        
-        // Guardamos la referencia al último producto para la lógica de unificación
-        Producto productoActual = null;
-
-        // 3. PROCESAR CADA FILA DE FORMA INDEPENDIENTE
-        foreach (var fila in filasOrdenadas)
-        {
-            // Ordenar de izquierda a derecha (lectura natural de columnas)
-            var itemsFila = fila.OrderBy(f => f.Left).ToList();
-            string textoCompletoFila = string.Join(" ", itemsFila.Select(f => f.Texto));
-            
-            string minus = textoCompletoFila.ToLower()
-                .Replace("à", "a").Replace("á", "a").Replace("è", "e").Replace("é", "e")
-                .Replace("í", "i").Replace("ò", "o").Replace("ó", "o").Replace("ú", "u");
-
-            // Filtro estricto de textos de cabecera y datos de empresa
-            if (minus.Contains("albara") || minus.Contains("seditesa") || minus.Contains("sintesis") ||
-                minus.Contains("www") || minus.Contains("@") || minus.Contains(".com") || minus.Contains(".org") ||
-                minus.Contains("izan") || minus.Contains("lecina") || minus.Contains("carrer") || minus.Contains("carer") ||
-                minus.Contains("telf") || minus.Contains("telefon") || minus.Contains("fecha") || minus.Contains("data") ||
-                minus.Contains("quantitat") || minus.Contains("descripci") || minus.Contains("nro") || minus.Contains("comanda") ||
-                minus.Contains("numero de serie") || minus.Contains("numero de srie") || minus.Contains("pag.") || minus.Contains("pagina"))
-            {
-                continue;
-            }
-
-            int cant = 0;
-            string nombre = "";
-
-            // Extracción inteligente analizando los extremos de la fila (columnas de cantidad)
-            string primerTexto = itemsFila[0].Texto.Trim();
-            var matchSoloNumeroPri = System.Text.RegularExpressions.Regex.Match(primerTexto, @"^\d{1,3}$");
-            var matchCombinadoPri = System.Text.RegularExpressions.Regex.Match(primerTexto, @"^(\d{1,3})\s+(.+)$");
-
-            if (matchSoloNumeroPri.Success)
-            {
-                cant = int.Parse(primerTexto);
-                nombre = string.Join(" ", itemsFila.Skip(1).Select(f => f.Texto));
-            }
-            else if (matchCombinadoPri.Success)
-            {
-                cant = int.Parse(matchCombinadoPri.Groups[1].Value);
-                nombre = matchCombinadoPri.Groups[2].Value + " " + string.Join(" ", itemsFila.Skip(1).Select(f => f.Texto));
+                lineasCombinadas.Add(line);
             }
             else
             {
-                string ultimoTexto = itemsFila[itemsFila.Count - 1].Texto.Trim();
-                var matchSoloNumeroUlt = System.Text.RegularExpressions.Regex.Match(ultimoTexto, @"^\d{1,3}$");
-                var matchCombinadoUlt = System.Text.RegularExpressions.Regex.Match(ultimoTexto, @"^(.+)\s+(\d{1,3})$");
-
-                if (matchSoloNumeroUlt.Success && itemsFila.Count > 1)
+                // Solo guardamos si contiene letras reales para evitar ruidos o símbolos sueltos
+                if (txt.Count(char.IsLetter) >= 2)
                 {
-                    cant = int.Parse(ultimoTexto);
-                    nombre = string.Join(" ", itemsFila.Take(itemsFila.Count - 1).Select(f => f.Texto));
-                }
-                else if (matchCombinadoUlt.Success)
-                {
-                    cant = int.Parse(matchCombinadoUlt.Groups[2].Value);
-                    nombre = string.Join(" ", itemsFila.Take(itemsFila.Count - 1).Select(f => f.Texto)) + " " + matchCombinadoUlt.Groups[1].Value;
-                }
-                else
-                {
-                    nombre = string.Join(" ", itemsFila.Select(f => f.Texto));
-                    foreach (var item in itemsFila)
-                    {
-                        var m = System.Text.RegularExpressions.Regex.Match(item.Texto.Trim(), @"^(\d{1,3})\b");
-                        if (m.Success)
-                        {
-                            cant = int.Parse(m.Groups[1].Value);
-                            break;
-                        }
-                    }
+                    lineasTextoSolo.Add(line);
                 }
             }
+        }
 
-            // Limpieza básica de caracteres en el nombre
-            nombre = System.Text.RegularExpressions.Regex.Replace(nombre, @"[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s\.\-®]", "").Trim();
+        var listaEnConstruccion = new List<ProductoEnConstruccion>();
 
-            // --- LÓGICA DE FUSIÓN POR CONTINUACIÓN SEGURA ---
-            if (cant == 0)
+        // 3. PROCESAR LÍNEAS COMBINADAS (Ya traen su número incorporado)
+        foreach (var line in lineasCombinadas)
+        {
+            string txt = line.Texto;
+            var mIzq = System.Text.RegularExpressions.Regex.Match(txt, @"^(\d{1,3})\s+(.+)$");
+            var mDer = System.Text.RegularExpressions.Regex.Match(txt, @"^(.+)\s+(\d{1,3})$");
+
+            int cant = 1;
+            string nombre = txt;
+
+            if (mIzq.Success)
             {
-                // Si la línea actual no tiene cantidad, pero tenemos un producto inmediatamente arriba guardado...
-                if (productoActual != null && nombre.Length > 2)
+                cant = int.Parse(mIzq.Groups[1].Value);
+                nombre = mIzq.Groups[2].Value;
+            }
+            else if (mDer.Success)
+            {
+                cant = int.Parse(mDer.Groups[2].Value);
+                nombre = mDer.Groups[1].Value;
+            }
+
+            listaEnConstruccion.Add(new ProductoEnConstruccion {
+                Cantidad = cant,
+                Nombre = nombre,
+                Top = line.Top,
+                Bottom = line.Bottom,
+                CenterY = line.CenterY
+            });
+        }
+
+        // 4. EMPAREJAR CANTIDADES SUELTAS CON SU TEXTO MÁS CERCANO (Mitiga el giro de la foto)
+        foreach (var qLine in lineasCantidadSolo)
+        {
+            RawLine mejorMatchTexto = null;
+            double minDistanciaY = double.MaxValue;
+
+            // Buscamos el bloque de texto libre que esté más alineado verticalmente con este número
+            foreach (var tLine in lineasTextoSolo.Where(t => !t.Procesado))
+            {
+                double distY = Math.Abs(qLine.CenterY - tLine.CenterY);
+                
+                // Un margen tolerante de 60 píxeles absorbe inclinaciones severas entre columnas
+                if (distY < 60 && distY < minDistanciaY)
                 {
-                    // ¡Es la continuación del producto roto! Lo unimos al nombre del anterior y saltamos la creación
-                    productoActual.Nombre = (productoActual.Nombre + " " + nombre).Trim();
-                    continue;
-                }
-                else
-                {
-                    // Si no hay producto arriba al que concatenar, le asignamos 1 por defecto para no perderlo
-                    cant = 1;
+                    minDistanciaY = distY;
+                    mejorMatchTexto = tLine;
                 }
             }
 
-            // Filtro definitivo anti-teléfonos o códigos sueltos
-            int totalLetras = nombre.Count(char.IsLetter);
-            if (totalLetras < 4) continue;
+            if (mejorMatchTexto != null)
+            {
+                mejorMatchTexto.Procesado = true;
+                listaEnConstruccion.Add(new ProductoEnConstruccion {
+                    Cantidad = int.Parse(qLine.Texto),
+                    Nombre = mejorMatchTexto.Texto,
+                    Top = Math.Min(qLine.Top, mejorMatchTexto.Top),
+                    Bottom = Math.Max(qLine.Bottom, mejorMatchTexto.Bottom),
+                    CenterY = (qLine.CenterY + mejorMatchTexto.CenterY) / 2
+                });
+            }
+        }
 
-            // Guardar producto y actualizar el puntero actual
-            productoActual = new Producto {
-                Nombre = nombre,
-                Cantidad = cant,
+        // 5. CAPTURAR LÍNEAS HUÉRFANAS (Textos partidos que perdieron el número por el giro)
+        var huerfanasOrdenadas = lineasTextoSolo.Where(t => !t.Procesado).OrderBy(t => t.CenterY).ToList();
+
+        foreach (var hLine in huerfanasOrdenadas)
+        {
+            ProductoEnConstruccion productoArriba = null;
+            double minDiffY = double.MaxValue;
+
+            // Buscamos el artículo que esté inmediatamente por encima de esta línea huérfana
+            foreach (var prod in listaEnConstruccion)
+            {
+                double diffY = hLine.CenterY - prod.CenterY;
+                
+                // Si está abajo (diffY > 0) y a una distancia coherente de renglón continuo
+                if (diffY > 0 && diffY < 65 && diffY < minDiffY)
+                {
+                    minDiffY = diffY;
+                    productoArriba = prod;
+                }
+            }
+
+            if (productoArriba != null)
+            {
+                // ¡Anexamos el texto partido al artículo padre conservando su cantidad intacta!
+                productoArriba.Nombre = (productoArriba.Nombre + " " + hLine.Texto).Trim();
+                productoArriba.Bottom = hLine.Bottom;
+                productoArriba.CenterY = (productoArriba.Top + hLine.Bottom) / 2;
+            }
+            else
+            {
+                // Si la línea de texto está completamente sola y aislada, no la descartamos: 
+                // la registramos con cantidad 1 para asegurar la revisión del operario
+                listaEnConstruccion.Add(new ProductoEnConstruccion {
+                    Cantidad = 1,
+                    Nombre = hLine.Texto,
+                    Top = hLine.Top,
+                    Bottom = hLine.Bottom,
+                    CenterY = hLine.CenterY
+                });
+            }
+        }
+
+        // 6. LIMPIEZA FINAL Y CARGA EN LA UI (Ordenados de arriba a abajo del papel)
+        foreach (var p in listaEnConstruccion.OrderBy(p => p.Top))
+        {
+            // Remover caracteres extraños manteniendo texto limpio
+            string nombreLimpio = System.Text.RegularExpressions.Regex.Replace(p.Nombre, @"[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s\.\-®]", "").Trim();
+            
+            // Filtro de seguridad: Un artículo real debe poseer contenido de texto representativo
+            if (nombreLimpio.Count(char.IsLetter) < 4) continue;
+
+            productosDetectados.Add(new Producto {
+                Nombre = nombreLimpio,
+                Cantidad = p.Cantidad,
                 Codigo = "OCR-" + DateTime.Now.ToString("mmssfff")
-            };
-            productosDetectados.Add(productoActual);
+            });
         }
     }
     #endif
