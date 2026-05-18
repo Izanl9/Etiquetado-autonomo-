@@ -14,7 +14,7 @@
             <h4 class="mb-0"><i class="oi oi-camera"></i> Escaneo de Albarán</h4>
         </div>
         <div class="card-body text-center">
-            <p class="text-secondary">Estructura por filas horizontales activa. Filtro estricto de cabeceras y series.</p>
+            <p class="text-secondary">Doble escudo de filtrado activo (Anti-cabeceras y Anti-datos de cliente).</p>
             
             @if (isProcessing)
             {
@@ -79,7 +79,6 @@
         public bool TieneTrayectoria { get; set; } = false;
     }
 
-    // Estructura intermedia para empaquetar renglones completos reconstruidos
     public class RowItem
     {
         public int Cantidad { get; set; } = 1;
@@ -145,7 +144,7 @@
         productosDetectados.Clear();
         var todasLasLineas = new List<RawLine>();
 
-        // 1. FILTRADO AGRESIVO ANTI-RUIDO (Cubre erratas como "srie" o "albara")
+        // 1. FILTRADO ULTRA-RESISTENTE
         foreach (var block in visionText.TextBlocks)
         {
             foreach (var line in block.Lines)
@@ -155,18 +154,28 @@
 
                 string minus = txt.ToLower()
                     .Replace("à", "a").Replace("á", "a").Replace("è", "e").Replace("é", "e")
-                    .Replace("í", "i").Replace("ò", "o").Replace("ó", "o").Replace("ú", "u");
+                    .Replace("í", "i").Replace("ò", "o").Replace("ó", "o").Replace("ú", "u")
+                    .Replace("ç", "c");
 
-                // Filtro optimizado para tumbar números de serie erróneos, cabeceras y datos del sistema
-                if (minus.Contains("serie") || minus.Contains("srie") || minus.Contains("srí") || minus.Contains("seri") ||
-                    minus.Contains("albaran") || minus.Contains("albara") || minus.Contains("alberan") ||
-                    minus.Contains("fecha") || minus.Contains("data") || minus.Contains("pagina") || minus.Contains("pag.") ||
-                    minus.Contains("cliente") || minus.Contains("comanda") || minus.Contains("pedido") ||
-                    minus.Contains("s/n") || minus.Contains("sn:") || minus.Contains("lote") || minus.Contains("bulto") ||
-                    minus.Contains("www.") || minus.Contains("@") || minus.Contains("total") || minus.Contains("seditesa"))
+                // ESCUDO A: Destrucción absoluta de bloques de cliente, teléfonos y metadatos (evita fugas)
+                if (minus.Contains("telf") || minus.Contains("telefon") || minus.Contains("tel.") ||
+                    minus.Contains("direccio") || minus.Contains("carrer") || minus.Contains("c/ ") ||
+                    minus.Contains("cognom") || minus.Contains("nom") || minus.Contains("nombre") || minus.Contains("apellido") ||
+                    minus.Contains("alliarm") || minus.Contains("albaran") || minus.Contains("albara") || minus.Contains("alberan") ||
+                    minus.Contains("comanda") || minus.Contains("pedido") || minus.Contains("numero") ||
+                    minus.Contains("fecha") || minus.Contains("data") || 
+                    minus.Contains("pagina") || minus.Contains("pag.") || 
+                    minus.Contains("cliente") || minus.Contains("proveedor") ||
+                    minus.Contains("seditesa") || minus.Contains("srie") || minus.Contains("serie") ||
+                    minus.Contains("nif:") || minus.Contains("cif:"))
                 {
-                    continue;
+                    continue; 
                 }
+
+                // ESCUDO B: Limpieza selectiva de títulos de tabla (Evita que "Quantitat Descripció" ensucie el nombre del producto)
+                txt = System.Text.RegularExpressions.Regex.Replace(txt, @"(?i)\b(quantitat|descripcio|descripción|cantidad|articulo|artículo|codigo|código|cant|ref)\b", "").Trim();
+                
+                if (string.IsNullOrEmpty(txt)) continue;
 
                 var box = line.BoundingBox;
                 if (box == null) continue;
@@ -206,9 +215,9 @@
 
         if (!todasLasLineas.Any()) return;
 
-        // 2. AGRUPACIÓN POR REJILLA HORIZONTAL (Une columnas separadas del mismo renglón)
+        // 2. RECONSTRUCCIÓN DE FILAS EN REJILLA HORIZONTAL
         var filasHorizontales = new List<List<RawLine>>();
-        var lineasPorProcesar = todasLasLineas.OrderBy(l => l.Left).ToList(); // De izquierda a derecha para fijar anclas
+        var lineasPorProcesar = todasLasLineas.OrderBy(l => l.Left).ToList();
 
         while (lineasPorProcesar.Any())
         {
@@ -220,13 +229,10 @@
             for (int i = lineasPorProcesar.Count - 1; i >= 0; i--)
             {
                 var target = lineasPorProcesar[i];
-                
-                // Calculamos dónde debería caer el texto del lado derecho siguiendo la inclinación nativa
                 double yTeorico = baseLine.TieneTrayectoria 
                     ? baseLine.Y0 + baseLine.Slope * (target.CenterX - baseLine.X0)
                     : baseLine.CenterY;
 
-                // Si está en el mismo rango horizontal (tolerancia menor al alto de la letra) pertenecen a la misma fila
                 if (Math.Abs(target.CenterY - yTeorico) < (baseLine.Height * 0.75))
                 {
                     filaActual.Add(target);
@@ -236,11 +242,10 @@
             filasHorizontales.Add(filaActual);
         }
 
-        // Ordenamos las filas completas de arriba a abajo de la página
         var filasOrdenadas = filasHorizontales.OrderBy(f => f.Average(l => l.CenterY)).ToList();
         var listaRowItems = new List<RowItem>();
 
-        // 3. EXTRACCIÓN DE CANTIDADES POR FILA RECONSTRUIDA
+        // 3. EXTRACCIÓN MUNICIONADA DE CANTIDADES
         foreach (var fila in filasOrdenadas)
         {
             var piezasIzquierdaDerecha = fila.OrderBy(l => l.Left).ToList();
@@ -251,10 +256,11 @@
 
             foreach (var pieza in piezasIzquierdaDerecha)
             {
-                string t = pieza.Texto;
+                string t = pieza.Texto.Trim();
+                if (string.IsNullOrEmpty(t)) continue;
+
                 var mSoloNum = System.Text.RegularExpressions.Regex.Match(t, @"^\d{1,3}$");
 
-                // Identifica si es el bloque de la columna cantidad (números de 1 a 3 dígitos solos)
                 if (mSoloNum.Success && !tieneCant)
                 {
                     cantFila = int.Parse(t);
@@ -268,7 +274,6 @@
 
             string textoUnido = string.Join(" ", palabrasTexto).Trim();
 
-            // Doble check por si la cantidad se leyó pegada al principio del texto
             if (!tieneCant)
             {
                 var mIzq = System.Text.RegularExpressions.Regex.Match(textoUnido, @"^(\d{1,3})\s+(.+)$");
@@ -279,6 +284,8 @@
                     tieneCant = true;
                 }
             }
+
+            textoUnido = System.Text.RegularExpressions.Regex.Replace(textoUnido, @"\s+", " ").Trim();
 
             if (!string.IsNullOrEmpty(textoUnido))
             {
@@ -292,22 +299,20 @@
             }
         }
 
-        // 4. COMBINACIÓN DE LÍNEAS MULTI-RENGLÓN (Descripciones que saltan abajo)
+        // 4. ENSAMBLADO MULTI-RENGLÓN PARA TEXTOS LARGOS
         var productosPreFormados = new List<RowItem>();
 
         foreach (var item in listaRowItems)
         {
-            // Si el renglón actual NO tiene una cantidad explícita y hay un producto arriba, se anexa
             if (!item.TieneCantidadExplicita && productosPreFormados.Any())
             {
                 var ultimoProd = productosPreFormados.Last();
                 double diffY = item.AverageY - ultimoProd.AverageY;
 
-                // Verificamos si la distancia vertical es coherente con un salto de renglón normal
                 if (diffY > 0 && diffY < (item.Height * 2.2))
                 {
                     ultimoProd.TextoCompleto = (ultimoProd.TextoCompleto + " " + item.TextoCompleto).Trim();
-                    ultimoProd.AverageY = item.AverageY; // Actualizamos el eje Y para encadenar múltiples renglones rotos
+                    ultimoProd.AverageY = item.AverageY;
                     continue;
                 }
             }
@@ -315,14 +320,16 @@
             productosPreFormados.Add(item);
         }
 
-        // 5. ESCUDO DE VALIDACIÓN FINAL Y MONTAJE EN INTERFAZ
+        // 5. ESCUDO FINAL DE VALIDACIÓN (Filtra códigos remanentes y strings sin sentido)
         foreach (var p in productosPreFormados)
         {
-            string nombreLimpio = System.Text.RegularExpressions.Regex.Replace(p.TextoCompleto, @"[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s\.\-®]", "").Trim();
+            string nombreLimpio = p.TextoCompleto.Trim();
             
-            // ¡MÁXIMA SEGURIDAD!: Un nombre de producto real DEBE contener letras descriptivas.
-            // Si es un número puro suelto (como el número de albarán o códigos huérfanos sin texto), se destruye aquí.
-            if (nombreLimpio.Count(char.IsLetter) < 3) continue;
+            // Un producto comercial legítimo contiene obligatoriamente letras descriptivas.
+            // Si tras la limpieza quedó un código corto aislado (como "S7530"), se destruye aquí.
+            string soloLetras = System.Text.RegularExpressions.Regex.Replace(nombreLimpio, @"[^a-zA-ZáéíóúÁÉÍÓÚñÑ]", "");
+            
+            if (soloLetras.Length < 4) continue; 
 
             productosDetectados.Add(new Producto {
                 Nombre = nombreLimpio,
