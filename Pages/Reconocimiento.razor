@@ -14,7 +14,7 @@
             <h4 class="mb-0"><i class="oi oi-camera"></i> Escaneo de Albarán</h4>
         </div>
         <div class="card-body text-center">
-            <p class="text-secondary">Alinee bien la cámara. El sistema separará estrictamente cada artículo.</p>
+            <p class="text-secondary">Escanee libremente. El sistema corrige automáticamente la inclinación y los textos partidos.</p>
             
             @if (isProcessing)
             {
@@ -62,7 +62,7 @@
 </div>
 
 @code {
-    // Estructura de coordenadas avanzada utilizando el rectángulo nativo
+    // Estructura adaptada para cálculos geométricos de rotación
     public class InfoLinea 
     {
         public string Texto { get; set; } = "";
@@ -70,8 +70,9 @@
         public int Bottom { get; set; }
         public int Left { get; set; }
         public int Right { get; set; }
-        public int Height { get; set; }
-        public int CenterY => (Top + Bottom) / 2;
+        public double CenterX { get; set; }
+        public double CenterY { get; set; }
+        public double CenterYCorregido { get; set; }
     }
 
     private List<Producto> productosDetectados = new();
@@ -129,49 +130,79 @@
     {
         productosDetectados.Clear();
         var todasLasLineas = new List<InfoLinea>();
+        
+        double sumaSlopes = 0;
+        int contSlopes = 0;
 
-        // 1. Extraer todas las líneas con sus cajas delimitadoras (Rect)
+        // 1. EXTRAER LÍNEAS Y CALCULAR LA INCLINACIÓN (SLOPE) REAL DE LA FOTO
         foreach (var block in visionText.TextBlocks)
         {
             foreach (var line in block.Lines)
             {
+                var box = line.BoundingBox;
+                if (box == null) continue;
+
+                double cx = (box.Left + box.Right) / 2.0;
+                double cy = (box.Top + box.Bottom) / 2.0;
+                double lineSlope = 0;
+
+                // Calculamos el ángulo basándonos en los vectores de las esquinas de cada línea escrita
+                var corners = line.GetCornerPoints();
+                if (corners != null && corners.Length >= 2)
+                {
+                    double dx = corners[1].X - corners[0].X;
+                    double dy = corners[1].Y - corners[0].Y;
+                    if (Math.Abs(dx) > 15)
+                    {
+                        lineSlope = dy / dx;
+                        if (Math.Abs(lineSlope) < 0.5) // Evitamos falsos positivos de líneas verticales
+                        {
+                            sumaSlopes += lineSlope;
+                            contSlopes++;
+                        }
+                    }
+                }
+
                 todasLasLineas.Add(new InfoLinea { 
                     Texto = line.Text.Trim(), 
-                    Top = line.BoundingBox.Top,
-                    Bottom = line.BoundingBox.Bottom,
-                    Left = line.BoundingBox.Left,
-                    Right = line.BoundingBox.Right,
-                    Height = line.BoundingBox.Height()
+                    Top = box.Top,
+                    Bottom = box.Bottom,
+                    Left = box.Left,
+                    Right = box.Right,
+                    CenterX = cx,
+                    CenterY = cy
                 });
             }
         }
 
         if (!todasLasLineas.Any()) return;
 
-        // 2. AGRUPACIÓN ANTICOLISIONES: Agrupar en filas reales de tabla
-        var ordenadasPorTop = todasLasLineas.OrderBy(l => l.Top).ToList();
+        // Inclinación promedio detectada en el papel escrito
+        double avgSlope = contSlopes > 0 ? sumaSlopes / contSlopes : 0;
+
+        // ESTABILIZACIÓN: Enderezamos virtualmente el eje vertical Y restando la desviación horizontal
+        foreach (var l in todasLasLineas)
+        {
+            l.CenterYCorregido = l.CenterY - (avgSlope * l.CenterX);
+        }
+
+        // 2. AGRUPACIÓN EN FILAS USANDO LAS COORDENADAS YA ENDEREZADAS
+        var ordenadasPorY = todasLasLineas.OrderBy(l => l.CenterYCorregido).ToList();
         var filas = new List<List<InfoLinea>>();
 
-        foreach (var linea in ordenadasPorTop)
+        foreach (var linea in ordenadasPorY)
         {
             bool asignada = false;
             foreach (var fila in filas)
             {
-                double centroFila = fila.Average(l => l.CenterY);
+                double centroFilaCorregido = fila.Average(l => l.CenterYCorregido);
                 
-                // Si la distancia vertical es pequeña (tolerancia para inclinación de foto)
-                if (Math.Abs(linea.CenterY - centroFila) < 22)
+                // Con el giro neutralizado matemáticamente, 20 píxeles de margen es súper preciso
+                if (Math.Abs(linea.CenterYCorregido - centroFilaCorregido) < 20)
                 {
-                    // REGLA DE ORO: Si se solapan horizontalmente en el eje X, significa que 
-                    // un texto está encima de otro. Por tanto, NO pueden ser la misma fila.
-                    bool solapeHorizontal = fila.Any(l => !(linea.Right < l.Left || linea.Left > l.Right));
-
-                    if (!solapeHorizontal)
-                    {
-                        fila.Add(linea);
-                        asignada = true;
-                        break;
-                    }
+                    fila.Add(linea);
+                    asignada = true;
+                    break;
                 }
             }
 
@@ -181,8 +212,14 @@
             }
         }
 
-        // 3. PROCESAR CADA FILA DE FORMA TOTALMENTE INDEPENDIENTE
-        foreach (var fila in filas)
+        // Ordenamos las filas finales de arriba a abajo del papel
+        var filasOrdenadas = filas.OrderBy(f => f.Average(l => l.CenterYCorregido)).ToList();
+        
+        // Guardamos la referencia al último producto para la lógica de unificación
+        Producto productoActual = null;
+
+        // 3. PROCESAR CADA FILA DE FORMA INDEPENDIENTE
+        foreach (var fila in filasOrdenadas)
         {
             // Ordenar de izquierda a derecha (lectura natural de columnas)
             var itemsFila = fila.OrderBy(f => f.Left).ToList();
@@ -206,7 +243,7 @@
             int cant = 0;
             string nombre = "";
 
-            // Extracción inteligente analizando los extremos de la fila (Columnas habituales de cantidad)
+            // Extracción inteligente analizando los extremos de la fila (columnas de cantidad)
             string primerTexto = itemsFila[0].Texto.Trim();
             var matchSoloNumeroPri = System.Text.RegularExpressions.Regex.Match(primerTexto, @"^\d{1,3}$");
             var matchCombinadoPri = System.Text.RegularExpressions.Regex.Match(primerTexto, @"^(\d{1,3})\s+(.+)$");
@@ -223,7 +260,6 @@
             }
             else
             {
-                // Si no está a la izquierda, probamos si la cantidad está en la columna de la derecha (último bloque)
                 string ultimoTexto = itemsFila[itemsFila.Count - 1].Texto.Trim();
                 var matchSoloNumeroUlt = System.Text.RegularExpressions.Regex.Match(ultimoTexto, @"^\d{1,3}$");
                 var matchCombinadoUlt = System.Text.RegularExpressions.Regex.Match(ultimoTexto, @"^(.+)\s+(\d{1,3})$");
@@ -240,7 +276,6 @@
                 }
                 else
                 {
-                    // Si el número está flotando por el medio, unimos todo y buscamos un patrón numérico inicial
                     nombre = string.Join(" ", itemsFila.Select(f => f.Texto));
                     foreach (var item in itemsFila)
                     {
@@ -254,27 +289,37 @@
                 }
             }
 
-            // Si tras analizar no se encuentra cantidad, ponemos 1 por defecto para no perder jamás el artículo
-            if (cant == 0) cant = 1;
-
-            // Limpieza de caracteres extraños en el nombre
+            // Limpieza básica de caracteres en el nombre
             nombre = System.Text.RegularExpressions.Regex.Replace(nombre, @"[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s\.\-®]", "").Trim();
 
-            // --- FILTRO DEFINITIVO ANTI-TELÉFONOS Y CÓDIGOS ---
-            // Un producto real debe tener letras. Contamos los caracteres alfabéticos.
-            int totalLetras = nombre.Count(char.IsLetter);
-            if (totalLetras < 4)
+            // --- LÓGICA DE FUSIÓN POR CONTINUACIÓN SEGURA ---
+            if (cant == 0)
             {
-                // Si la línea son solo números (un teléfono suelto, código postal o número de albarán), se descarta automáticamente
-                continue;
+                // Si la línea actual no tiene cantidad, pero tenemos un producto inmediatamente arriba guardado...
+                if (productoActual != null && nombre.Length > 2)
+                {
+                    // ¡Es la continuación del producto roto! Lo unimos al nombre del anterior y saltamos la creación
+                    productoActual.Nombre = (productoActual.Nombre + " " + nombre).Trim();
+                    continue;
+                }
+                else
+                {
+                    // Si no hay producto arriba al que concatenar, le asignamos 1 por defecto para no perderlo
+                    cant = 1;
+                }
             }
 
-            // Guardar el producto limpio
-            productosDetectados.Add(new Producto {
+            // Filtro definitivo anti-teléfonos o códigos sueltos
+            int totalLetras = nombre.Count(char.IsLetter);
+            if (totalLetras < 4) continue;
+
+            // Guardar producto y actualizar el puntero actual
+            productoActual = new Producto {
                 Nombre = nombre,
                 Cantidad = cant,
                 Codigo = "OCR-" + DateTime.Now.ToString("mmssfff")
-            });
+            };
+            productosDetectados.Add(productoActual);
         }
     }
     #endif
