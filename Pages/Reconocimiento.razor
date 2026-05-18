@@ -14,7 +14,7 @@
             <h4 class="mb-0"><i class="oi oi-camera"></i> Escaneo de Albarán</h4>
         </div>
         <div class="card-body text-center">
-            <p class="text-secondary">Doble escudo activo. Regex avanzado para cantidades y anti-cascada.</p>
+            <p class="text-secondary">Cantidades manuales activadas. Ajusta con los botones antes de imprimir.</p>
             
             @if (isProcessing)
             {
@@ -38,11 +38,20 @@
                         @foreach (var prod in productosDetectados)
                         {
                             <div class="list-group-item d-flex justify-content-between align-items-center">
-                                <div>
-                                    <span class="d-block fw-bold">@prod.Nombre</span>
+                                <div class="me-3" style="flex: 1;">
+                                    <span class="d-block fw-bold @(prod.Cantidad == 0 ? "text-danger" : "")">@prod.Nombre</span>
                                     <small class="text-muted">Ref: @prod.Codigo</small>
                                 </div>
-                                <span class="badge bg-primary rounded-pill px-3 py-2">Cant: @prod.Cantidad</span>
+                                
+                                <div class="d-flex align-items-center">
+                                    <button class="btn btn-light btn-sm border text-danger fw-bold px-3 py-1 shadow-sm" @onclick="() => DisminuirCantidad(prod)">-</button>
+                                    
+                                    <span class="badge @(prod.Cantidad == 0 ? "bg-warning text-dark" : "bg-primary") rounded-pill mx-2 px-3 py-2" style="font-size: 1rem; min-width: 45px;">
+                                        @prod.Cantidad
+                                    </span>
+                                    
+                                    <button class="btn btn-light btn-sm border text-success fw-bold px-3 py-1 shadow-sm" @onclick="() => AumentarCantidad(prod)">+</button>
+                                </div>
                             </div>
                         }
                     </div>
@@ -81,7 +90,8 @@
 
     public class RowItem
     {
-        public int Cantidad { get; set; } = 1;
+        // AHORA EMPIEZA EN 0 POR DEFECTO
+        public int Cantidad { get; set; } = 0; 
         public string TextoCompleto { get; set; } = "";
         public bool TieneCantidadExplicita { get; set; } = false;
         public double AverageY { get; set; }
@@ -91,6 +101,10 @@
     private List<Producto> productosDetectados = new();
     private bool isProcessing = false;
     private string estadoMensaje = "";
+
+    // MÉTODOS DE LA INTERFAZ PARA SUMAR Y RESTAR
+    private void AumentarCantidad(Producto p) => p.Cantidad++;
+    private void DisminuirCantidad(Producto p) { if (p.Cantidad > 0) p.Cantidad--; }
 
     private async Task CapturarAlbaran()
     {
@@ -144,7 +158,7 @@
         productosDetectados.Clear();
         var todasLasLineas = new List<RawLine>();
 
-        // 1. FILTRADO ULTRA-RESISTENTE
+        // 1. FILTRADO
         foreach (var block in visionText.TextBlocks)
         {
             foreach (var line in block.Lines)
@@ -157,21 +171,21 @@
                     .Replace("í", "i").Replace("ò", "o").Replace("ó", "o").Replace("ú", "u")
                     .Replace("ç", "c");
 
-                if (minus.Contains("telf") || minus.Contains("telèfon") || minus.Contains("tel.") ||
+                if (minus.Contains("telf") || minus.Contains("telefon") || minus.Contains("tel.") ||
                     minus.Contains("direccio") || minus.Contains("carrer") || minus.Contains("c/ ") ||
-                    minus.Contains("cognom") || minus.Contains("nom ") || minus.Contains("Telèfon") ||
-                    minus.Contains("alliarm") || minus.Contains("Albaran") || minus.Contains("albara") || minus.Contains("alberan") ||
+                    minus.Contains("cognom") || minus.Contains("nom i") ||
+                    minus.Contains("alliarm") || minus.Contains("albaran") || minus.Contains("albara") || minus.Contains("alberan") ||
                     minus.Contains("comanda") || minus.Contains("pedido") || 
-                    minus.Contains("fecha") || minus.Contains("data") || minus.Contains("Número") ||
-                    minus.Contains("pagina") || minus.Contains("pag.") || minus.Contains("www") ||
-                    minus.Contains("cliente") || minus.Contains("proveedor") || 
-                    minus.Contains("seditesa") || minus.Contains("srie") || minus.Contains("sèrie:") ||
+                    minus.Contains("fecha") || minus.Contains("data") || 
+                    minus.Contains("pagina") || minus.Contains("pag.") || 
+                    minus.Contains("cliente") || minus.Contains("proveedor") ||
+                    minus.Contains("seditesa") || minus.Contains("srie") || minus.Contains("serie") ||
                     minus.Contains("nif:") || minus.Contains("cif:"))
                 {
                     continue; 
                 }
 
-                txt = System.Text.RegularExpressions.Regex.Replace(txt, @"(?i)\b(quantitat|descripció|descripción|cantidad|articulo|artículo|codigo|código|cant|ref)\b", "").Trim();
+                txt = System.Text.RegularExpressions.Regex.Replace(txt, @"(?i)\b(quantitat|descripcio|descripción|cantidad|articulo|artículo|codigo|código|cant|ref)\b", "").Trim();
                 
                 if (string.IsNullOrEmpty(txt)) continue;
 
@@ -213,7 +227,7 @@
 
         if (!todasLasLineas.Any()) return;
 
-        // 2. RECONSTRUCCIÓN DE FILAS EN REJILLA HORIZONTAL
+        // 2. RECONSTRUCCIÓN HORIZONTAL
         var filasHorizontales = new List<List<RawLine>>();
         var lineasPorProcesar = todasLasLineas.OrderBy(l => l.Left).ToList();
 
@@ -243,12 +257,12 @@
         var filasOrdenadas = filasHorizontales.OrderBy(f => f.Average(l => l.CenterY)).ToList();
         var listaRowItems = new List<RowItem>();
 
-        // 3. NUEVA EXTRACCIÓN AVANZADA DE CANTIDADES (Soporta decimales y texto pegado)
+        // 3. EXTRACCIÓN DE CANTIDADES (0 por defecto)
         foreach (var fila in filasOrdenadas)
         {
             var piezasIzquierdaDerecha = fila.OrderBy(l => l.Left).ToList();
             
-            int cantFila = 1;
+            int cantFila = 0; // Cambiado a 0 por defecto
             bool tieneCant = false;
             var palabrasTexto = new List<string>();
 
@@ -257,7 +271,6 @@
                 string t = pieza.Texto.Trim();
                 if (string.IsNullOrEmpty(t)) continue;
 
-                // Regex super-reforzado: Lee "3", "3.00", "3,0", "3 uds", "3pz", etc. y atrapa el número base.
                 var mSoloNum = System.Text.RegularExpressions.Regex.Match(t, @"^(\d{1,3})(?:[,.]\d{1,2})?(?:\s*(?:ud|uds|pz|pzs|u))?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
                 if (mSoloNum.Success && !tieneCant)
@@ -273,7 +286,6 @@
 
             string textoUnido = string.Join(" ", palabrasTexto).Trim();
 
-            // Rescate secundario: Por si la cantidad se pegó a la primera palabra de la descripción (ej: "3,00 Purgadores...")
             if (!tieneCant)
             {
                 var mIzq = System.Text.RegularExpressions.Regex.Match(textoUnido, @"^(\d{1,3})(?:[,.]\d{1,2})?(?:\s*(?:ud|uds|pz|pzs|u))?\s+(.+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
@@ -299,7 +311,7 @@
             }
         }
 
-        // 4. ENSAMBLADO MULTI-RENGLÓN SEGURO (Evita el "efecto cascada" o tragar productos distintos)
+        // 4. ENSAMBLADO MULTI-RENGLÓN
         var productosPreFormados = new List<RowItem>();
 
         foreach (var item in listaRowItems)
@@ -309,8 +321,6 @@
                 var ultimoProd = productosPreFormados.Last();
                 double diffY = item.AverageY - ultimoProd.AverageY;
 
-                // UMBRAL REDUCIDO: de 2.2 a 1.5. Si el salto hacia abajo es muy grande, no lo junta.
-                // Es un salto de línea de párrafo normal, no un salto entre dos filas de la tabla.
                 if (diffY > 0 && diffY < (item.Height * 1.5))
                 {
                     ultimoProd.TextoCompleto = (ultimoProd.TextoCompleto + " " + item.TextoCompleto).Trim();
@@ -322,7 +332,7 @@
             productosPreFormados.Add(item);
         }
 
-        // 5. ESCUDO FINAL DE VALIDACIÓN
+        // 5. ESCUDO FINAL
         foreach (var p in productosPreFormados)
         {
             string nombreLimpio = p.TextoCompleto.Trim();
@@ -343,14 +353,23 @@
     {
         try
         {
+            // Filtro para ignorar los productos que el usuario haya dejado en 0
+            var productosParaImprimir = productosDetectados.Where(p => p.Cantidad > 0).ToList();
+
+            if (!productosParaImprimir.Any())
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Asigna al menos una cantidad mayor a 0 a algún producto usando el botón '+'.");
+                return;
+            }
+
             isProcessing = true;
-            estadoMensaje = "Guardando productos...";
+            estadoMensaje = "Guardando e imprimiendo...";
             StateHasChanged();
 
-            foreach (var prod in productosDetectados)
+            foreach (var prod in productosParaImprimir)
                 await DB.GuardarProducto(prod);
 
-            string path = GeneradorPdf.GenerarEtiquetas(productosDetectados);
+            string path = GeneradorPdf.GenerarEtiquetas(productosParaImprimir);
             await Launcher.Default.OpenAsync(new OpenFileRequest {
                 Title = "PDF de Etiquetas",
                 File = new ReadOnlyFile(path)
