@@ -158,7 +158,7 @@
                     .Replace("ç", "c");
 
                 // ESCUDO A: Destrucción absoluta de bloques de cliente, teléfonos y metadatos (evita fugas)
-                if (minus.Contains("telf") || minus.Contains("telefon") || minus.Contains("tel.") ||
+                if (minus.Contains("telf") || minus.Contains("telefon") || minus.Contains("tel.") || minus.Contains("telèfon") ||
                     minus.Contains("direccio") || minus.Contains("carrer") || minus.Contains("c/ ") ||
                     minus.Contains("cognom") || minus.Contains("nom") || minus.Contains("nombre") || minus.Contains("apellido") ||
                     minus.Contains("alliarm") || minus.Contains("albaran") || minus.Contains("albara") || minus.Contains("alberan") ||
@@ -166,15 +166,15 @@
                     minus.Contains("fecha") || minus.Contains("data") || 
                     minus.Contains("pagina") || minus.Contains("pag.") || 
                     minus.Contains("cliente") || minus.Contains("proveedor") ||
-                    minus.Contains("seditesa") || minus.Contains("srie") || minus.Contains("serie") ||
+                    minus.Contains("seditesa") || minus.Contains("srie") || minus.Contains("sèrie") || minus.Contains("serie:") ||
                     minus.Contains("nif:") || minus.Contains("cif:"))
                 {
                     continue; 
                 }
 
                 // ESCUDO B: Limpieza selectiva de títulos de tabla (Evita que "Quantitat Descripció" ensucie el nombre del producto)
-                txt = System.Text.RegularExpressions.Regex.Replace(txt, @"(?i)\b(quantitat|descripcio|descripción|cantidad|articulo|artículo|codigo|código|cant|ref)\b", "").Trim();
-                
+                txt = System.Text.RegularExpressions.Regex.Replace(txt, @"(?i)\b(quantitat|descripció|descripción|cantidad|articulo|artículo|codigo|código|cant|ref)\b", "").Trim();
+
                 if (string.IsNullOrEmpty(txt)) continue;
 
                 var box = line.BoundingBox;
