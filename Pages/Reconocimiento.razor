@@ -14,7 +14,7 @@
             <h4 class="mb-0"><i class="oi oi-camera"></i> Escaneo de Albarán</h4>
         </div>
         <div class="card-body text-center">
-            <p class="text-secondary">Capture el albarán. El escáner unirá automáticamente los textos largos.</p>
+            <p class="text-secondary">Alinee bien la cámara. El sistema separará estrictamente cada artículo.</p>
             
             @if (isProcessing)
             {
@@ -62,12 +62,16 @@
 </div>
 
 @code {
-    // Usamos 'Top' en lugar de CenterY porque es más estable para alinear textos de distintos tamaños
+    // Estructura de coordenadas avanzada utilizando el rectángulo nativo
     public class InfoLinea 
     {
         public string Texto { get; set; } = "";
         public int Top { get; set; }
+        public int Bottom { get; set; }
         public int Left { get; set; }
+        public int Right { get; set; }
+        public int Height { get; set; }
+        public int CenterY => (Top + Bottom) / 2;
     }
 
     private List<Producto> productosDetectados = new();
@@ -126,137 +130,152 @@
         productosDetectados.Clear();
         var todasLasLineas = new List<InfoLinea>();
 
+        // 1. Extraer todas las líneas con sus cajas delimitadoras (Rect)
         foreach (var block in visionText.TextBlocks)
         {
             foreach (var line in block.Lines)
             {
                 todasLasLineas.Add(new InfoLinea { 
                     Texto = line.Text.Trim(), 
-                    Top = line.BoundingBox.Top, // La parte superior de la letra es nuestra ancla
-                    Left = line.BoundingBox.Left
+                    Top = line.BoundingBox.Top,
+                    Bottom = line.BoundingBox.Bottom,
+                    Left = line.BoundingBox.Left,
+                    Right = line.BoundingBox.Right,
+                    Height = line.BoundingBox.Height()
                 });
             }
         }
 
         if (!todasLasLineas.Any()) return;
 
-        // 1. AGRUPACIÓN (Tolerancia de 25 píxeles)
-        var ordenadas = todasLasLineas.OrderBy(l => l.Top).ToList();
+        // 2. AGRUPACIÓN ANTICOLISIONES: Agrupar en filas reales de tabla
+        var ordenadasPorTop = todasLasLineas.OrderBy(l => l.Top).ToList();
         var filas = new List<List<InfoLinea>>();
-        
-        var filaActual = new List<InfoLinea> { ordenadas[0] };
-        int topReferencia = ordenadas[0].Top;
 
-        for (int i = 1; i < ordenadas.Count; i++)
+        foreach (var linea in ordenadasPorTop)
         {
-            if (Math.Abs(ordenadas[i].Top - topReferencia) < 25) 
+            bool asignada = false;
+            foreach (var fila in filas)
             {
-                filaActual.Add(ordenadas[i]);
+                double centroFila = fila.Average(l => l.CenterY);
+                
+                // Si la distancia vertical es pequeña (tolerancia para inclinación de foto)
+                if (Math.Abs(linea.CenterY - centroFila) < 22)
+                {
+                    // REGLA DE ORO: Si se solapan horizontalmente en el eje X, significa que 
+                    // un texto está encima de otro. Por tanto, NO pueden ser la misma fila.
+                    bool solapeHorizontal = fila.Any(l => !(linea.Right < l.Left || linea.Left > l.Right));
+
+                    if (!solapeHorizontal)
+                    {
+                        fila.Add(linea);
+                        asignada = true;
+                        break;
+                    }
+                }
             }
-            else
+
+            if (!asignada)
             {
-                filas.Add(new List<InfoLinea>(filaActual));
-                filaActual = new List<InfoLinea> { ordenadas[i] };
-                topReferencia = ordenadas[i].Top;
+                filas.Add(new List<InfoLinea> { linea });
             }
         }
-        filas.Add(filaActual);
 
-        // Guardaremos el último producto creado por si tenemos que sumarle texto de la siguiente línea
-        Producto productoActual = null;
-
+        // 3. PROCESAR CADA FILA DE FORMA TOTALMENTE INDEPENDIENTE
         foreach (var fila in filas)
         {
-            // Leemos de izquierda a derecha
+            // Ordenar de izquierda a derecha (lectura natural de columnas)
             var itemsFila = fila.OrderBy(f => f.Left).ToList();
-            string textoFila = string.Join(" ", itemsFila.Select(f => f.Texto));
+            string textoCompletoFila = string.Join(" ", itemsFila.Select(f => f.Texto));
             
-            string minus = textoFila.ToLower()
+            string minus = textoCompletoFila.ToLower()
                 .Replace("à", "a").Replace("á", "a").Replace("è", "e").Replace("é", "e")
                 .Replace("í", "i").Replace("ò", "o").Replace("ó", "o").Replace("ú", "u");
 
-            // --- FILTRO BLACKLIST DE CABECERAS Y PIES ---
+            // Filtro estricto de textos de cabecera y datos de empresa
             if (minus.Contains("albara") || minus.Contains("seditesa") || minus.Contains("sintesis") ||
-                minus.Contains("www") || minus.Contains("@") || minus.Contains("edit.org") || 
-                minus.Contains("izan") || minus.Contains("lecina") || minus.Contains("carrer") || 
-                minus.Contains("carer") || minus.Contains("telf") || minus.Contains("telefon") || 
-                minus.Contains("fecha") || minus.Contains("data") || minus.Contains("quantitat") || 
-                minus.Contains("descripci") || minus.Contains("nro") || minus.Contains("comanda") || 
-                minus.Contains("fictici") || minus.Contains("numero de serie") || minus.Contains("numero de srie") ||
-                minus.Contains("du ") || minus.Equals("du"))
+                minus.Contains("www") || minus.Contains("@") || minus.Contains(".com") || minus.Contains(".org") ||
+                minus.Contains("izan") || minus.Contains("lecina") || minus.Contains("carrer") || minus.Contains("carer") ||
+                minus.Contains("telf") || minus.Contains("telefon") || minus.Contains("fecha") || minus.Contains("data") ||
+                minus.Contains("quantitat") || minus.Contains("descripci") || minus.Contains("nro") || minus.Contains("comanda") ||
+                minus.Contains("numero de serie") || minus.Contains("numero de srie") || minus.Contains("pag.") || minus.Contains("pagina"))
             {
                 continue;
             }
 
-            // Ignoramos si es un teléfono o factura larga
-            string sinEspacios = System.Text.RegularExpressions.Regex.Replace(textoFila, @"\s+", "");
-            if (System.Text.RegularExpressions.Regex.IsMatch(sinEspacios, @"\d{8,}")) continue; 
-            if (System.Text.RegularExpressions.Regex.IsMatch(sinEspacios, @"^\d{4,7}$")) continue; 
-
             int cant = 0;
             string nombre = "";
 
-            // Buscamos cantidad y nombre en la fila actual
-            foreach (var item in itemsFila)
+            // Extracción inteligente analizando los extremos de la fila (Columnas habituales de cantidad)
+            string primerTexto = itemsFila[0].Texto.Trim();
+            var matchSoloNumeroPri = System.Text.RegularExpressions.Regex.Match(primerTexto, @"^\d{1,3}$");
+            var matchCombinadoPri = System.Text.RegularExpressions.Regex.Match(primerTexto, @"^(\d{1,3})\s+(.+)$");
+
+            if (matchSoloNumeroPri.Success)
             {
-                string t = item.Texto.Trim();
-                if (System.Text.RegularExpressions.Regex.IsMatch(t, @"^\d{1,3}$"))
+                cant = int.Parse(primerTexto);
+                nombre = string.Join(" ", itemsFila.Skip(1).Select(f => f.Texto));
+            }
+            else if (matchCombinadoPri.Success)
+            {
+                cant = int.Parse(matchCombinadoPri.Groups[1].Value);
+                nombre = matchCombinadoPri.Groups[2].Value + " " + string.Join(" ", itemsFila.Skip(1).Select(f => f.Texto));
+            }
+            else
+            {
+                // Si no está a la izquierda, probamos si la cantidad está en la columna de la derecha (último bloque)
+                string ultimoTexto = itemsFila[itemsFila.Count - 1].Texto.Trim();
+                var matchSoloNumeroUlt = System.Text.RegularExpressions.Regex.Match(ultimoTexto, @"^\d{1,3}$");
+                var matchCombinadoUlt = System.Text.RegularExpressions.Regex.Match(ultimoTexto, @"^(.+)\s+(\d{1,3})$");
+
+                if (matchSoloNumeroUlt.Success && itemsFila.Count > 1)
                 {
-                    cant = int.Parse(t);
+                    cant = int.Parse(ultimoTexto);
+                    nombre = string.Join(" ", itemsFila.Take(itemsFila.Count - 1).Select(f => f.Texto));
                 }
-                else if (t.Length > 2)
+                else if (matchCombinadoUlt.Success)
                 {
-                    nombre += (string.IsNullOrEmpty(nombre) ? "" : " ") + t;
+                    cant = int.Parse(matchCombinadoUlt.Groups[2].Value);
+                    nombre = string.Join(" ", itemsFila.Take(itemsFila.Count - 1).Select(f => f.Texto)) + " " + matchCombinadoUlt.Groups[1].Value;
+                }
+                else
+                {
+                    // Si el número está flotando por el medio, unimos todo y buscamos un patrón numérico inicial
+                    nombre = string.Join(" ", itemsFila.Select(f => f.Texto));
+                    foreach (var item in itemsFila)
+                    {
+                        var m = System.Text.RegularExpressions.Regex.Match(item.Texto.Trim(), @"^(\d{1,3})\b");
+                        if (m.Success)
+                        {
+                            cant = int.Parse(m.Groups[1].Value);
+                            break;
+                        }
+                    }
                 }
             }
 
-            // Limpieza de caracteres raros del nombre
+            // Si tras analizar no se encuentra cantidad, ponemos 1 por defecto para no perder jamás el artículo
+            if (cant == 0) cant = 1;
+
+            // Limpieza de caracteres extraños en el nombre
             nombre = System.Text.RegularExpressions.Regex.Replace(nombre, @"[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s\.\-®]", "").Trim();
 
-            // Por si lee todo en un solo bloque (ej: "5 Estaciones")
-            if (cant == 0)
+            // --- FILTRO DEFINITIVO ANTI-TELÉFONOS Y CÓDIGOS ---
+            // Un producto real debe tener letras. Contamos los caracteres alfabéticos.
+            int totalLetras = nombre.Count(char.IsLetter);
+            if (totalLetras < 4)
             {
-                var matchInicio = System.Text.RegularExpressions.Regex.Match(nombre, @"^(\d{1,3})\s+(.+)$");
-                if (matchInicio.Success)
-                {
-                    cant = int.Parse(matchInicio.Groups[1].Value);
-                    nombre = matchInicio.Groups[2].Value.Trim();
-                }
+                // Si la línea son solo números (un teléfono suelto, código postal o número de albarán), se descarta automáticamente
+                continue;
             }
 
-            // --- LÓGICA DE CREACIÓN O CONTINUACIÓN ---
-            if (cant > 0 && nombre.Length > 4) 
-            {
-                // CASO 1: Tiene cantidad y nombre. Es un producto perfecto.
-                productoActual = new Producto { Nombre = nombre, Cantidad = cant, Codigo = "OCR-" + DateTime.Now.ToString("mmssfff") };
-                productosDetectados.Add(productoActual);
-            } 
-            else if (cant > 0) 
-            {
-                // CASO 2: Tiene cantidad, pero el nombre está vacío. Lo creamos a la espera del nombre.
-                productoActual = new Producto { Nombre = nombre, Cantidad = cant, Codigo = "OCR-" + DateTime.Now.ToString("mmssfff") };
-                productosDetectados.Add(productoActual);
-            } 
-            else if (cant == 0 && nombre.Length > 2) 
-            {
-                // CASO 3: Solo hay texto sin cantidad...
-                if (productoActual != null) 
-                {
-                    // ¡Es la segunda línea de un producto largo! Se lo sumamos al anterior.
-                    productoActual.Nombre = (productoActual.Nombre + " " + nombre).Trim();
-                } 
-                else 
-                {
-                    // Es un producto huérfano. Le ponemos cantidad 1.
-                    productoActual = new Producto { Nombre = nombre, Cantidad = 1, Codigo = "OCR-" + DateTime.Now.ToString("mmssfff") };
-                    productosDetectados.Add(productoActual);
-                }
-            }
+            // Guardar el producto limpio
+            productosDetectados.Add(new Producto {
+                Nombre = nombre,
+                Cantidad = cant,
+                Codigo = "OCR-" + DateTime.Now.ToString("mmssfff")
+            });
         }
-
-        // --- LIMPIEZA FINAL ---
-        // Eliminamos "productos" que se hayan quedado vacíos o sean simples letras sueltas
-        productosDetectados.RemoveAll(p => string.IsNullOrWhiteSpace(p.Nombre) || p.Nombre.Length < 5);
     }
     #endif
 
