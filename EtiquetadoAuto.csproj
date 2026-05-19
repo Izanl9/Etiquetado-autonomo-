@@ -1,5 +1,4 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
-	<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundScale="0.65" Color="rgba(255, 255, 255, 0)" />
 	<PropertyGroup>
 		<TargetFrameworks>net8.0-android</TargetFrameworks>
 		<OutputType>Exe</OutputType>
