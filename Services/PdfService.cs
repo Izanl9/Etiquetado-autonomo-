@@ -56,9 +56,10 @@ namespace EtiquetadoAuto.Services
                             // Puedes adaptar este diseño según la estética que busques
 
                             // Contenedor principal centrado
+                            // ASÍ DEBE QUEDAR (Solución explícita)
                             Paragraph contenedor = new Paragraph()
-                                .SetTextAlignment(TextAlignment.CENTER)
-                                .SetVerticalAlignment(VerticalAlignment.MIDDLE);
+                                .SetTextAlignment(iText.Layout.Properties.TextAlignment.CENTER)
+                                .SetVerticalAlignment(iText.Layout.Properties.VerticalAlignment.MIDDLE);
 
                             // Código de barras o Referencia (Texto secundario arriba)
                             Text txtCodigo = new Text($"REF: {prod.Codigo}\n")
