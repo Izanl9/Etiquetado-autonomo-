@@ -179,13 +179,13 @@
                     minus.Contains("fecha") || minus.Contains("data") || 
                     minus.Contains("pagina") || minus.Contains("pag.") || 
                     minus.Contains("cliente") || minus.Contains("proveedor") ||
-                    minus.Contains("seditesa") || minus.Contains("srie") || minus.Contains("serie") ||
+                    minus.Contains("seditesa") || minus.Contains("srie") || minus.Contains("Número") ||
                     minus.Contains("nif:") || minus.Contains("cif:"))
                 {
                     continue; 
                 }
 
-                txt = System.Text.RegularExpressions.Regex.Replace(txt, @"(?i)\b(quantitat|descripcio|descripción|cantidad|articulo|artículo|codigo|código|cant|ref)\b", "").Trim();
+                txt = System.Text.RegularExpressions.Regex.Replace(txt, @"(?i)\b(quantitat|descripció|descripción|cantidad|articulo|artículo|codigo|código|cant|ref)\b", "").Trim();
                 
                 if (string.IsNullOrEmpty(txt)) continue;
 

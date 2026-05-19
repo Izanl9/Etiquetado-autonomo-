@@ -12,17 +12,13 @@
   <ItemGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
     <SourceRoot Include="/home/ilecina/.nuget/packages/" />
   </ItemGroup>
-  <ImportGroup Condition=" '$(TargetFramework)' == '' AND '$(ExcludeRestorePackageImports)' != 'true' ">
-    <Import Project="$(NuGetPackageRoot)microsoft.aspnetcore.components.webview/8.0.10/buildMultiTargeting/Microsoft.AspNetCore.Components.WebView.props" Condition="Exists('$(NuGetPackageRoot)microsoft.aspnetcore.components.webview/8.0.10/buildMultiTargeting/Microsoft.AspNetCore.Components.WebView.props')" />
-  </ImportGroup>
   <ImportGroup Condition=" '$(TargetFramework)' == 'net8.0-android' AND '$(ExcludeRestorePackageImports)' != 'true' ">
+    <Import Project="$(NuGetPackageRoot)xamarin.build.download/0.11.4/buildTransitive/Xamarin.Build.Download.props" Condition="Exists('$(NuGetPackageRoot)xamarin.build.download/0.11.4/buildTransitive/Xamarin.Build.Download.props')" />
     <Import Project="$(NuGetPackageRoot)microsoft.net.illink.tasks/8.0.23/build/Microsoft.NET.ILLink.Tasks.props" Condition="Exists('$(NuGetPackageRoot)microsoft.net.illink.tasks/8.0.23/build/Microsoft.NET.ILLink.Tasks.props')" />
-    <Import Project="$(NuGetPackageRoot)microsoft.ml.onnxruntime/1.25.1/build/netstandard2.1/Microsoft.ML.OnnxRuntime.props" Condition="Exists('$(NuGetPackageRoot)microsoft.ml.onnxruntime/1.25.1/build/netstandard2.1/Microsoft.ML.OnnxRuntime.props')" />
-    <Import Project="$(NuGetPackageRoot)microsoft.maui.resizetizer/8.0.100/buildTransitive/Microsoft.Maui.Resizetizer.props" Condition="Exists('$(NuGetPackageRoot)microsoft.maui.resizetizer/8.0.100/buildTransitive/Microsoft.Maui.Resizetizer.props')" />
-    <Import Project="$(NuGetPackageRoot)microsoft.maui.core/8.0.100/buildTransitive/Microsoft.Maui.Core.props" Condition="Exists('$(NuGetPackageRoot)microsoft.maui.core/8.0.100/buildTransitive/Microsoft.Maui.Core.props')" />
-    <Import Project="$(NuGetPackageRoot)microsoft.maui.controls.build.tasks/8.0.100/buildTransitive/netstandard2.0/Microsoft.Maui.Controls.Build.Tasks.props" Condition="Exists('$(NuGetPackageRoot)microsoft.maui.controls.build.tasks/8.0.100/buildTransitive/netstandard2.0/Microsoft.Maui.Controls.Build.Tasks.props')" />
-    <Import Project="$(NuGetPackageRoot)microsoft.aspnetcore.components.webview/8.0.10/buildTransitive/Microsoft.AspNetCore.Components.WebView.props" Condition="Exists('$(NuGetPackageRoot)microsoft.aspnetcore.components.webview/8.0.10/buildTransitive/Microsoft.AspNetCore.Components.WebView.props')" />
-    <Import Project="$(NuGetPackageRoot)microsoft.aspnetcore.components.webview.maui/8.0.100/build/Microsoft.AspNetCore.Components.WebView.Maui.props" Condition="Exists('$(NuGetPackageRoot)microsoft.aspnetcore.components.webview.maui/8.0.100/build/Microsoft.AspNetCore.Components.WebView.Maui.props')" />
+    <Import Project="$(NuGetPackageRoot)microsoft.maui.resizetizer/8.0.3/buildTransitive/Microsoft.Maui.Resizetizer.props" Condition="Exists('$(NuGetPackageRoot)microsoft.maui.resizetizer/8.0.3/buildTransitive/Microsoft.Maui.Resizetizer.props')" />
+    <Import Project="$(NuGetPackageRoot)microsoft.maui.core/8.0.3/buildTransitive/Microsoft.Maui.Core.props" Condition="Exists('$(NuGetPackageRoot)microsoft.maui.core/8.0.3/buildTransitive/Microsoft.Maui.Core.props')" />
+    <Import Project="$(NuGetPackageRoot)microsoft.maui.controls.build.tasks/8.0.3/buildTransitive/netstandard2.0/Microsoft.Maui.Controls.Build.Tasks.props" Condition="Exists('$(NuGetPackageRoot)microsoft.maui.controls.build.tasks/8.0.3/buildTransitive/netstandard2.0/Microsoft.Maui.Controls.Build.Tasks.props')" />
+    <Import Project="$(NuGetPackageRoot)microsoft.aspnetcore.components.webview.maui/8.0.3/build/Microsoft.AspNetCore.Components.WebView.Maui.props" Condition="Exists('$(NuGetPackageRoot)microsoft.aspnetcore.components.webview.maui/8.0.3/build/Microsoft.AspNetCore.Components.WebView.Maui.props')" />
   </ImportGroup>
   <PropertyGroup Condition=" '$(TargetFramework)' == 'net8.0-android' AND '$(ExcludeRestorePackageImports)' != 'true' ">
     <PkgMicrosoft_NET_ILLink_Tasks Condition=" '$(PkgMicrosoft_NET_ILLink_Tasks)' == '' ">/home/ilecina/.nuget/packages/microsoft.net.illink.tasks/8.0.23</PkgMicrosoft_NET_ILLink_Tasks>
