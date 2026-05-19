@@ -1,5 +1,5 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
-
+	<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundScale="0.65" Color="rgba(255, 255, 255, 0)" />
 	<PropertyGroup>
 		<TargetFrameworks>net8.0-android</TargetFrameworks>
 		<OutputType>Exe</OutputType>
@@ -17,7 +17,11 @@
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">24.0</SupportedOSPlatformVersion>
 		<TargetPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">34.0</TargetPlatformVersion>
 	</PropertyGroup>
-
+	<PropertyGroup Condition="$(TargetFramework.Contains('-android'))">
+ 	   <AndroidCreatePackagePerAbi>false</AndroidCreatePackagePerAbi>
+	
+ 	   <AndroidGenerateAppBundle>false</AndroidGenerateAppBundle>
+	</PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Maui.Controls" Version="8.0.3" />
 		<PackageReference Include="Microsoft.Maui.Controls.Compatibility" Version="8.0.3" />
