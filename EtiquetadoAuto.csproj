@@ -32,6 +32,8 @@
 		<PackageReference Include="SQLitePCLRaw.bundle_green" Version="2.1.8" />
 		<PackageReference Include="QuestPDF" Version="2023.12.6" />
 		<PackageReference Include="Xamarin.Google.MLKit.TextRecognition" Version="114.*" />
+		<PackageReference Include="itext7" Version="8.0.2" />
+    	<PackageReference Include="itext7.bouncy-castle-adapter" Version="8.0.2" />
 	</ItemGroup>
 
 	<ItemGroup>
