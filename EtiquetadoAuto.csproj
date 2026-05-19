@@ -9,7 +9,7 @@
 		<Nullable>disable</Nullable>
 
 		<ApplicationTitle>EtiquetadoAuto</ApplicationTitle>
-		<ApplicationId>com.companyname.etiquetadoauto</ApplicationId>
+		<ApplicationId>es.Sintseditesa.EtiquetadoAuto</ApplicationId>
 		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
 		<ApplicationVersion>1</ApplicationVersion>
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">24.0</SupportedOSPlatformVersion>

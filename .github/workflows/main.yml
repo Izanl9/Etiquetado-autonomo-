@@ -20,7 +20,7 @@ jobs:
       run: dotnet workload install maui-android
 
     - name: Compilar APK de Android
-      run: dotnet publish -c Release -f net8.0-android -p:AndroidPackageFormat=apk -p:AndroidCreatePackagePerAbi=falseue
+      run: dotnet publish -c Release -f net8.0-android -p:AndroidPackageFormat=apk -p:AndroidCreatePackagePerAbi=false
 
     - name: Subir APK para descargar
       uses: actions/upload-artifact@v4
