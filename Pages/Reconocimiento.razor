@@ -14,7 +14,7 @@
             <h4 class="mb-0"><i class="oi oi-camera"></i> Escaneo de Albarán</h4>
         </div>
         <div class="card-body text-center">
-            <p class="text-secondary">Cantidades manuales activadas. Ajusta con los botones antes de imprimir.</p>
+            <p class="text-secondary">Ajusta las cantidades y las dimensiones de la etiqueta antes de generar el PDF.</p>
             
             @if (isProcessing)
             {
@@ -45,15 +45,38 @@
                                 
                                 <div class="d-flex align-items-center">
                                     <button class="btn btn-light btn-sm border text-danger fw-bold px-3 py-1 shadow-sm" @onclick="() => DisminuirCantidad(prod)">-</button>
-                                    
                                     <span class="badge @(prod.Cantidad == 0 ? "bg-warning text-dark" : "bg-primary") rounded-pill mx-2 px-3 py-2" style="font-size: 1rem; min-width: 45px;">
                                         @prod.Cantidad
                                     </span>
-                                    
                                     <button class="btn btn-light btn-sm border text-success fw-bold px-3 py-1 shadow-sm" @onclick="() => AumentarCantidad(prod)">+</button>
                                 </div>
                             </div>
                         }
+                    </div>
+
+                    <div class="card bg-light border-0 mb-4 p-3 shadow-sm">
+                        <h6 class="fw-bold mb-3 text-dark"><i class="oi oi-wrench"></i> Configuración del Tamaño (mm)</h6>
+                        <div class="row g-2 align-items-center mb-2">
+                            <div class="col-12">
+                                <label class="form-label small text-muted mb-1">Tamaños Rápidos</label>
+                                <select class="form-select form-select-sm" @onchange="OnChangePresetTamaño">
+                                    <option value="estandar">Estándar (80mm x 50mm)</option>
+                                    <option value="pequena">Pequeña (50mm x 30mm)</option>
+                                    <option value="grande">Grande (100mm x 70mm)</option>
+                                    <option value="manual">Personalizado...</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label small text-muted mb-1">Ancho (mm)</label>
+                                <input type="number" class="form-control form-control-sm" @bind="etiquetaAnchoMm" min="10" max="300" disabled="@(presetSeleccionado != "manual")" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small text-muted mb-1">Alto (mm)</label>
+                                <input type="number" class="form-control form-control-sm" @bind="etiquetaAltoMm" min="10" max="300" disabled="@(presetSeleccionado != "manual")" />
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="d-grid gap-2">
@@ -71,6 +94,19 @@
 </div>
 
 @code {
+    // Variables de control para las dimensiones
+    private double etiquetaAnchoMm = 80;
+    private double etiquetaAltoMm = 50;
+    private string presetSeleccionado = "estandar";
+
+    private void OnChangePresetTamaño(ChangeEventArgs e)
+    {
+        presetSeleccionado = e.Value?.ToString() ?? "estandar";
+        if (presetSeleccionado == "estandar") { etiquetaAnchoMm = 80; etiquetaAltoMm = 50; }
+        else if (presetSeleccionado == "pequena") { etiquetaAnchoMm = 50; etiquetaAltoMm = 30; }
+        else if (presetSeleccionado == "grande") { etiquetaAnchoMm = 100; etiquetaAltoMm = 70; }
+    }
+
     public class RawLine 
     {
         public string Texto { get; set; } = "";
@@ -81,7 +117,6 @@
         public int Height => Bottom - Top;
         public double CenterX => (Left + Right) / 2.0;
         public double CenterY => (Top + Bottom) / 2.0;
-        
         public double X0 { get; set; }
         public double Y0 { get; set; }
         public double Slope { get; set; }
@@ -90,7 +125,6 @@
 
     public class RowItem
     {
-        // AHORA EMPIEZA EN 0 POR DEFECTO
         public int Cantidad { get; set; } = 0; 
         public string TextoCompleto { get; set; } = "";
         public bool TieneCantidadExplicita { get; set; } = false;
@@ -102,7 +136,6 @@
     private bool isProcessing = false;
     private string estadoMensaje = "";
 
-    // MÉTODOS DE LA INTERFAZ PARA SUMAR Y RESTAR
     private void AumentarCantidad(Producto p) => p.Cantidad++;
     private void DisminuirCantidad(Producto p) { if (p.Cantidad > 0) p.Cantidad--; }
 
@@ -158,7 +191,6 @@
         productosDetectados.Clear();
         var todasLasLineas = new List<RawLine>();
 
-        // 1. FILTRADO
         foreach (var block in visionText.TextBlocks)
         {
             foreach (var line in block.Lines)
@@ -172,20 +204,20 @@
                     .Replace("ç", "c");
 
                 if (minus.Contains("telf") || minus.Contains("telefon") || minus.Contains("tel.") ||
-                    minus.Contains("direccio") || minus.Contains("carrer") || minus.Contains("c/ ") ||minus.Contains("carer") ||
+                    minus.Contains("direccio") || minus.Contains("carrer") || minus.Contains("c/ ") ||
                     minus.Contains("cognom") || minus.Contains("nom i") ||
-                    minus.Contains("alliarm") || minus.Contains("albaran") || minus.Contains("albarà") || minus.Contains("alberan") ||
+                    minus.Contains("alliarm") || minus.Contains("albaran") || minus.Contains("albara") || minus.Contains("alberan") ||
                     minus.Contains("comanda") || minus.Contains("pedido") || 
-                    minus.Contains("fecha") || minus.Contains("data") || minus.Contains("albarän") ||
-                    minus.Contains("pagina") || minus.Contains("pag.") || minus.Contains("numero") ||
-                    minus.Contains("cliente") || minus.Contains("proveedor") || 
-                    minus.Contains("seditesa") || minus.Contains("srie") || minus.Contains("Número") ||
+                    minus.Contains("fecha") || minus.Contains("data") || 
+                    minus.Contains("pagina") || minus.Contains("pag.") || 
+                    minus.Contains("cliente") || minus.Contains("proveedor") ||
+                    minus.Contains("seditesa") || minus.Contains("srie") || minus.Contains("serie") ||
                     minus.Contains("nif:") || minus.Contains("cif:"))
                 {
                     continue; 
                 }
 
-                txt = System.Text.RegularExpressions.Regex.Replace(txt, @"(?i)\b(quantitat|descripcio|descripció|descripción|cantidad|articulo|artículo|codigo|código|cant|ref)\b", "").Trim();
+                txt = System.Text.RegularExpressions.Regex.Replace(txt, @"(?i)\b(quantitat|descripcio|descripción|cantidad|articulo|artículo|codigo|código|cant|ref)\b", "").Trim();
                 
                 if (string.IsNullOrEmpty(txt)) continue;
 
@@ -227,7 +259,6 @@
 
         if (!todasLasLineas.Any()) return;
 
-        // 2. RECONSTRUCCIÓN HORIZONTAL
         var filasHorizontales = new List<List<RawLine>>();
         var lineasPorProcesar = todasLasLineas.OrderBy(l => l.Left).ToList();
 
@@ -257,12 +288,11 @@
         var filasOrdenadas = filasHorizontales.OrderBy(f => f.Average(l => l.CenterY)).ToList();
         var listaRowItems = new List<RowItem>();
 
-        // 3. EXTRACCIÓN DE CANTIDADES (0 por defecto)
         foreach (var fila in filasOrdenadas)
         {
             var piezasIzquierdaDerecha = fila.OrderBy(l => l.Left).ToList();
             
-            int cantFila = 0; // Cambiado a 0 por defecto
+            int cantFila = 0; 
             bool tieneCant = false;
             var palabrasTexto = new List<string>();
 
@@ -311,7 +341,6 @@
             }
         }
 
-        // 4. ENSAMBLADO MULTI-RENGLÓN
         var productosPreFormados = new List<RowItem>();
 
         foreach (var item in listaRowItems)
@@ -332,7 +361,6 @@
             productosPreFormados.Add(item);
         }
 
-        // 5. ESCUDO FINAL
         foreach (var p in productosPreFormados)
         {
             string nombreLimpio = p.TextoCompleto.Trim();
@@ -353,12 +381,11 @@
     {
         try
         {
-            // Filtro para ignorar los productos que el usuario haya dejado en 0
             var productosParaImprimir = productosDetectados.Where(p => p.Cantidad > 0).ToList();
 
             if (!productosParaImprimir.Any())
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Asigna al menos una cantidad mayor a 0 a algún producto usando el botón '+'.");
+                await JSRuntime.InvokeVoidAsync("alert", "Asigna al menos una cantidad mayor a 0.");
                 return;
             }
 
@@ -369,7 +396,9 @@
             foreach (var prod in productosParaImprimir)
                 await DB.GuardarProducto(prod);
 
-            string path = GeneradorPdf.GenerarEtiquetas(productosParaImprimir);
+            // MODIFICACIÓN CRUCIAL: Pasamos las variables de ancho y alto elegidas por el usuario en milímetros
+            string path = GeneradorPdf.GenerarEtiquetas(productosParaImprimir, etiquetaAnchoMm, etiquetaAltoMm);
+            
             await Launcher.Default.OpenAsync(new OpenFileRequest {
                 Title = "PDF de Etiquetas",
                 File = new ReadOnlyFile(path)
