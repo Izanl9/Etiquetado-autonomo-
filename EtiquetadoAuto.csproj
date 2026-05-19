@@ -12,7 +12,6 @@
 		<ApplicationId>com.companyname.etiquetadoauto</ApplicationId>
 		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
 		<ApplicationVersion>1</ApplicationVersion>
-		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundScale="0.65" />
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">24.0</SupportedOSPlatformVersion>
 		<TargetPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">34.0</TargetPlatformVersion>
 	</PropertyGroup>
@@ -22,6 +21,7 @@
  	   <AndroidGenerateAppBundle>false</AndroidGenerateAppBundle>
 	</PropertyGroup>
 	<ItemGroup>
+		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundScale="0.65" />
 		<PackageReference Include="Microsoft.Maui.Controls" Version="8.0.3" />
 		<PackageReference Include="Microsoft.Maui.Controls.Compatibility" Version="8.0.3" />
 		<PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="8.0.3" />
