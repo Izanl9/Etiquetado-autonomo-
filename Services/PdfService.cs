@@ -14,7 +14,7 @@ namespace EtiquetadoAuto.Services
     {
         public string GenerarEtiquetas(List<Producto> productos, double anchoMm = 80, double altoMm = 50)
         {
-            // 1. Forzamos a que el lienzo siempre sea una hoja A4 completa
+            // El lienzo siempre será una hoja A4 completa
             PageSize tamanoHoja = PageSize.A4;
             
             string nombreArchivo = $"Etiquetas_Hoja_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
@@ -30,11 +30,10 @@ namespace EtiquetadoAuto.Services
                     float margenHojaPuntos = (float)(10 * 2.83465);
                     documento.SetMargins(margenHojaPuntos, margenHojaPuntos, margenHojaPuntos, margenHojaPuntos);
 
-                    // 2. CÁLCULO AUTOMÁTICO DE CUÁNTAS CABEN POR FILA
                     // El espacio útil horizontal de un A4 (210mm) menos los márgenes (20mm) es de 190mm
                     double anchoUtilMm = 210 - 20; 
                     int columnas = (int)(anchoUtilMm / anchoMm);
-                    if (columnas < 1) columnas = 1; // Como mínimo, una por fila
+                    if (columnas < 1) columnas = 1;
 
                     // Definimos los anchos exactos de las columnas en puntos basados en tu elección
                     float[] anchosColumnas = new float[columnas];
@@ -43,17 +42,19 @@ namespace EtiquetadoAuto.Services
                         anchosColumnas[i] = (float)(anchoMm * 2.83465);
                     }
 
-                    // Creamos la tabla/cuadrícula donde se encajarán las etiquetas
+                    // Creamos la tabla/cuadrícula de iText
                     Table tablaGrid = new Table(anchosColumnas);
-                    tablaGrid.SetHorizontalAlignment(HorizontalAlignment.CENTER);
+                    
+                    // SOLUCIÓN ERROR 1: Especificamos el alineado horizontal de iText
+                    tablaGrid.SetHorizontalAlignment(iText.Layout.Properties.HorizontalAlignment.CENTER);
 
-                    // 3. BUCLE: Creamos tantas celdas como copias hayamos pedido
+                    // BUCLE: Creamos tantas celdas como copias hayamos pedido
                     foreach (var prod in productos)
                     {
                         for (int i = 0; i < prod.Cantidad; i++)
                         {
-                            // Cada celda es una pegatina individual con el tamaño exacto que elegiste
-                            Cell celdaEtiqueta = new Cell()
+                            // SOLUCIÓN ERROR 2 Y 3: Especificamos que es una 'Cell' de iText y no de MAUI
+                            iText.Layout.Element.Cell celdaEtiqueta = new iText.Layout.Element.Cell()
                                 .SetWidth((float)(anchoMm * 2.83465))
                                 .SetHeight((float)(altoMm * 2.83465))
                                 .SetPadding(5)
@@ -78,7 +79,7 @@ namespace EtiquetadoAuto.Services
                             if (prod.Nombre.Length > 20) tamanoLetra = (float)(altoMm * 0.16);
 
                             Text txtNombre = new Text(prod.Nombre)
-                                .SetFontSize(Math.Max(9, tamanoLetra)) // Nunca baja de tamaño 9 para que sea legible
+                                .SetFontSize(Math.Max(9, tamanoLetra)) 
                                 .SetBold()
                                 .SetFontColor(iText.Kernel.Colors.ColorConstants.BLACK);
                             contenido.Add(txtNombre);
@@ -89,9 +90,7 @@ namespace EtiquetadoAuto.Services
                         }
                     }
 
-                    // 4. Inyectamos la cuadrícula en el folio.
-                    // iText es inteligente: si la cuadrícula supera el alto del A4,
-                    // crea una página nueva y sigue dibujando las etiquetas ahí de forma nativa.
+                    // Inyectamos la cuadrícula en el folio
                     documento.Add(tablaGrid);
                     documento.Close();
                 }
