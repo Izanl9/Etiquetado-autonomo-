@@ -7,7 +7,8 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<ApplicationUseMultiDex>true</ApplicationUseMultiDex>	
 		<Nullable>disable</Nullable>
-
+		<ApplicationDisplayVersion>1.1</ApplicationDisplayVersion>
+		<ApplicationVersion>2</ApplicationVersion>
 		<ApplicationTitle>EtiquetadoAuto</ApplicationTitle>
 		<ApplicationId>es.Sintseditesa.EtiquetadoAuto</ApplicationId>
 		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
