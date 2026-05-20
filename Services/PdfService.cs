@@ -14,84 +14,89 @@ namespace EtiquetadoAuto.Services
     {
         public string GenerarEtiquetas(List<Producto> productos, double anchoMm = 80, double altoMm = 50)
         {
-            // 1. EL SECRETO: Convertir milímetros a puntos tipográficos (1 mm = 2.83465 points)
-            float anchoPuntos = (float)(anchoMm * 2.83465);
-            float altoPuntos = (float)(altoMm * 2.83465);
-
-            // 2. Definir la ruta temporal donde se guardará el PDF en el dispositivo
-            string nombreArchivo = $"Etiquetas_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
+            // 1. Forzamos a que el lienzo siempre sea una hoja A4 completa
+            PageSize tamanoHoja = PageSize.A4;
+            
+            string nombreArchivo = $"Etiquetas_Hoja_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
             string rutaCompleta = System.IO.Path.Combine(FileSystem.CacheDirectory, nombreArchivo);
 
-            // 3. Inicializar el escritor de iText
             using (PdfWriter writer = new PdfWriter(rutaCompleta))
             {
-                // Crear el tamaño de página personalizado usando los puntos calculados
-                PageSize tamanoPersonalizado = new PageSize(anchoPuntos, altoPuntos);
-                
                 using (PdfDocument pdf = new PdfDocument(writer))
                 {
-                    // Forzar a que el documento use nuestro tamaño por defecto
-                    pdf.SetDefaultPageSize(tamanoPersonalizado);
+                    Document documento = new Document(pdf, tamanoHoja);
+                    
+                    // Margen de seguridad perimetral del folio (10 mm a cada lado)
+                    float margenHojaPuntos = (float)(10 * 2.83465);
+                    documento.SetMargins(margenHojaPuntos, margenHojaPuntos, margenHojaPuntos, margenHojaPuntos);
 
-                    // Configurar márgenes pequeños (ej. 5mm de margen) para aprovechar el espacio de la pegatina
-                    float margenPuntos = (float)(5 * 2.83465);
-                    Document documento = new Document(pdf);
-                    documento.SetMargins(margenPuntos, margenPuntos, margenPuntos, margenPuntos);
+                    // 2. CÁLCULO AUTOMÁTICO DE CUÁNTAS CABEN POR FILA
+                    // El espacio útil horizontal de un A4 (210mm) menos los márgenes (20mm) es de 190mm
+                    double anchoUtilMm = 210 - 20; 
+                    int columnas = (int)(anchoUtilMm / anchoMm);
+                    if (columnas < 1) columnas = 1; // Como mínimo, una por fila
 
-                    bool esPrimeraPagina = true;
+                    // Definimos los anchos exactos de las columnas en puntos basados en tu elección
+                    float[] anchosColumnas = new float[columnas];
+                    for (int i = 0; i < columnas; i++)
+                    {
+                        anchosColumnas[i] = (float)(anchoMm * 2.83465);
+                    }
 
-                    // 4. Bucle principal: Generar tantas páginas como "Cantidad" pida cada producto
+                    // Creamos la tabla/cuadrícula donde se encajarán las etiquetas
+                    Table tablaGrid = new Table(anchosColumnas);
+                    tablaGrid.SetHorizontalAlignment(HorizontalAlignment.CENTER);
+
+                    // 3. BUCLE: Creamos tantas celdas como copias hayamos pedido
                     foreach (var prod in productos)
                     {
                         for (int i = 0; i < prod.Cantidad; i++)
                         {
-                            // Si no es la primera etiqueta del PDF, añadimos una nueva página física
-                            if (!esPrimeraPagina)
-                            {
-                                documento.Add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-                            }
-                            esPrimeraPagina = false;
-
-                            // --- DISEÑO INTERNO DE LA ETIQUETA ---
-                            // Puedes adaptar este diseño según la estética que busques
-
-                            // Contenedor principal centrado
-                            // ASÍ DEBE QUEDAR (Solución explícita)
-                            Paragraph contenedor = new Paragraph()
-                                .SetTextAlignment(iText.Layout.Properties.TextAlignment.CENTER)
+                            // Cada celda es una pegatina individual con el tamaño exacto que elegiste
+                            Cell celdaEtiqueta = new Cell()
+                                .SetWidth((float)(anchoMm * 2.83465))
+                                .SetHeight((float)(altoMm * 2.83465))
+                                .SetPadding(5)
                                 .SetVerticalAlignment(iText.Layout.Properties.VerticalAlignment.MIDDLE);
 
-                            // Código de barras o Referencia (Texto secundario arriba)
+                            // Contenedor del texto centrado dentro de la pegatina
+                            Paragraph contenido = new Paragraph()
+                                .SetTextAlignment(iText.Layout.Properties.TextAlignment.CENTER);
+
+                            // Código / Referencia arriba
                             Text txtCodigo = new Text($"REF: {prod.Codigo}\n")
-                                .SetFontSize(Math.Max(8, (float)(altoMm * 0.2))) // Escala el texto según el alto
+                                .SetFontSize(9)
                                 .SetBold()
                                 .SetFontColor(iText.Kernel.Colors.ColorConstants.DARK_GRAY);
-                            contenedor.Add(txtCodigo);
+                            contenido.Add(txtCodigo);
 
-                            // Línea de separación estética (opcional)
-                            contenedor.Add(new Text("-----------------------------------------\n").SetFontSize(8));
+                            // Línea divisoria fina
+                            contenido.Add(new Text("-----------------------------------\n").SetFontSize(7));
 
-                            // Nombre del producto (Texto principal grande)
-                            // Calculamos un tamaño de letra dinámico para que no se desborde en etiquetas enanas
-                            float tamanoLetraNombre = (float)(altoMm * 0.3); 
-                            if (prod.Nombre.Length > 20) tamanoLetraNombre = (float)(altoMm * 0.22); // Si el texto es largo, lo encogemos un poco
+                            // Nombre del producto (Tamaño adaptable según el alto de la etiqueta)
+                            float tamanoLetra = (float)(altoMm * 0.22);
+                            if (prod.Nombre.Length > 20) tamanoLetra = (float)(altoMm * 0.16);
 
                             Text txtNombre = new Text(prod.Nombre)
-                                .SetFontSize(Math.Max(10, tamanoLetraNombre))
+                                .SetFontSize(Math.Max(9, tamanoLetra)) // Nunca baja de tamaño 9 para que sea legible
                                 .SetBold()
                                 .SetFontColor(iText.Kernel.Colors.ColorConstants.BLACK);
-                            contenedor.Add(txtNombre);
+                            contenido.Add(txtNombre);
 
-                            // Inyectar el bloque de texto en la página actual de la etiqueta
-                            documento.Add(contenedor);
+                            // Metemos el texto en la celda y la celda en la cuadrícula
+                            celdaEtiqueta.Add(contenido);
+                            tablaGrid.AddCell(celdaEtiqueta);
                         }
                     }
 
+                    // 4. Inyectamos la cuadrícula en el folio.
+                    // iText es inteligente: si la cuadrícula supera el alto del A4,
+                    // crea una página nueva y sigue dibujando las etiquetas ahí de forma nativa.
+                    documento.Add(tablaGrid);
                     documento.Close();
                 }
             }
 
-            // Devolvemos la ruta del archivo generado para que 'Launcher.OpenAsync' pueda abrirlo
             return rutaCompleta;
         }
     }
