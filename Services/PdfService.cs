@@ -15,11 +15,9 @@ namespace EtiquetadoAuto.Services
     {
         public string GenerarEtiquetas(List<Producto> productos, double anchoMm = 80, double altoMm = 50)
         {
-            // Blindaje de seguridad para que no se desborde la hoja A4
+            // Blindaje de seguridad para el ancho horizontal en el folio A4
             if (anchoMm > 190) anchoMm = 190;
-            if (altoMm > 277) altoMm = 277;
             if (anchoMm < 20) anchoMm = 20; 
-            if (altoMm < 15) altoMm = 15;
 
             PageSize tamanoHoja = PageSize.A4;
             string nombreArchivo = $"Etiquetas_Consolidadas_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
@@ -35,7 +33,7 @@ namespace EtiquetadoAuto.Services
                     float margenHojaPuntos = (float)(10 * 2.83465);
                     documento.SetMargins(margenHojaPuntos, margenHojaPuntos, margenHojaPuntos, margenHojaPuntos);
 
-                    // Calcular cuántas columnas reales caben a lo ancho
+                    // Calcular cuántas columnas reales caben a lo ancho según el Entry de la pantalla
                     double anchoUtilMm = 210 - 20; 
                     int columnas = (int)(anchoUtilMm / anchoMm);
                     if (columnas < 1) columnas = 1;
@@ -46,79 +44,72 @@ namespace EtiquetadoAuto.Services
                         anchosColumnas[i] = (float)(anchoMm * 2.83465);
                     }
 
-                    // Cuadrícula principal transparente (actúa como soporte de las etiquetas)
+                    // Cuadrícula principal transparente
                     Table tablaGrid = new Table(anchosColumnas);
                     tablaGrid.SetHorizontalAlignment(iText.Layout.Properties.HorizontalAlignment.CENTER);
 
-                    float altoPuntosEtiqueta = (float)(altoMm * 2.83465);
                     float anchoPuntosEtiqueta = (float)(anchoMm * 2.83465);
 
                     foreach (var prod in productos)
                     {
                         for (int k = 0; k < prod.Cantidad; k++)
                         {
-                            // Celda base invisible de la cuadrícula
+                            // 🌟 CLAVE 1: Eliminamos altoMm de la celda base. 
+                            // Ahora la cuadrícula solo controla el Ancho estricto. El alto será libre.
                             iText.Layout.Element.Cell celdaGrid = new iText.Layout.Element.Cell()
                                 .SetWidth(anchoPuntosEtiqueta)
-                                .SetHeight(altoPuntosEtiqueta)
                                 .SetPadding(4) // Espacio de separación entre pegatinas vecinas
                                 .SetBorder(iText.Layout.Borders.Border.NO_BORDER)
                                 .SetKeepTogether(true);
 
-                            // 🌟 AQUÍ ESTÁ EL TRUCO: Creamos una sub-tabla interna para maquetar la pegatina real
-                            // Tiene 1 columna y estructuramos las filas para forzar las posiciones de la foto
+                            // 🌟 CLAVE 2: Creamos la sub-tabla interna para maquetar la pegatina real (Sin SetHeight fijo)
+                            // Al no ponerle un alto fijo, la caja gris se encoge verticalmente eliminando todo el espacio en blanco.
                             Table tarjetaEtiqueta = new Table(1);
                             tarjetaEtiqueta.SetWidth(UnitValue.CreatePercentValue(100));
-                            tarjetaEtiqueta.SetHeight(UnitValue.CreatePointValue(altoPuntosEtiqueta - 8)); // Descontamos paddings
                             tarjetaEtiqueta.SetBorder(new SolidBorder(iText.Kernel.Colors.ColorConstants.LIGHT_GRAY, 0.5f));
 
-                            // --- FILA Superior (Nombre + Código) ---
-                            float tamanoNombre = (float)(altoMm * 0.15);
-                            if (tamanoNombre > 13) tamanoNombre = 13;
-                            if (tamanoNombre < 9)  tamanoNombre = 9;
+                            // Tamaño de letra basado en el ancho disponible para que no se corte hacia los lados
+                            float tamanoNombre = (float)(anchoMm * 0.13);
+                            if (tamanoNombre > 11) tamanoNombre = 11; // Forzamos el tamaño exacto de tu foto buena
+                            if (tamanoNombre < 8)  tamanoNombre = 8;
 
-                            float tamanoCodigo = (float)(altoMm * 0.09);
-                            if (tamanoCodigo > 8) tamanoCodigo = 8;
-                            if (tamanoCodigo < 6) tamanoCodigo = 6;
+                            float tamanoCodigo = tamanoNombre * 0.75f;
 
-                            Paragraph pContenidoSuperior = new Paragraph()
+                            // Creamos un único párrafo contenedor para que el texto y el contador estén compactados
+                            Paragraph pContenido = new Paragraph()
                                 .SetMargin(0)
                                 .SetPadding(0);
 
-                            // Añadimos Nombre (Negrita, Izquierda, Mayúsculas)
-                            pContenidoSuperior.Add(new Text(prod.Nombre.ToUpper() + "\n")
+                            // 1. Nombre del producto (Negrita, Izquierda, Mayúsculas)
+                            pContenido.Add(new Text(prod.Nombre.ToUpper() + "\n")
                                 .SetFontColor(iText.Kernel.Colors.ColorConstants.BLACK)
                                 .SetFontSize(tamanoNombre)
                                 .SetBold());
 
-                            // Añadimos Código justo debajo
-                            pContenidoSuperior.Add(new Text($"CÓDIGO: {prod.Codigo}")
+                            // 2. Código justo debajo en gris
+                            pContenido.Add(new Text($"CÓDIGO: {prod.Codigo}")
                                 .SetFontColor(iText.Kernel.Colors.ColorConstants.GRAY)
                                 .SetFontSize(tamanoCodigo));
 
-                            iText.Layout.Element.Cell celdaSuperior = new iText.Layout.Element.Cell()
-                                .Add(pContenidoSuperior)
-                                .SetPadding(5)
-                                .SetVerticalAlignment(iText.Layout.Properties.VerticalAlignment.TOP)
-                                .SetBorder(iText.Layout.Borders.Border.NO_BORDER);
-
-                            // --- FILA INFERIOR (Contador "X de Y") ---
+                            // 3. Contador "X de Y" integrado de forma compacta (Alineado a la derecha abajo)
                             Paragraph pContador = new Paragraph($"{k + 1} de {prod.Cantidad}")
                                 .SetFontColor(iText.Kernel.Colors.ColorConstants.DARK_GRAY)
                                 .SetFontSize(tamanoCodigo * 0.9f)
                                 .SetTextAlignment(iText.Layout.Properties.TextAlignment.RIGHT)
-                                .SetMargin(0)
-                                .SetPadding(0);
+                                .SetMarginTop(2) // Separación mínima con el código de arriba
+                                .SetMarginBottom(0);
 
-                            iText.Layout.Element.Cell celdaInferior = new iText.Layout.Element.Cell()
+                            // Metemos los textos en la celda de la pegatina
+                            iText.Layout.Element.Cell celdaContenido = new iText.Layout.Element.Cell()
+                                .Add(pContenido)
                                 .Add(pContador)
-                                .SetPadding(5)
-                                .SetVerticalAlignment(iText.Layout.Properties.VerticalAlignment.BOTTOM) // Empuja el contador abajo del todo
+                                .SetPaddingTop(6)
+                                .SetPaddingBottom(4)
+                                .SetPaddingLeft(6)
+                                .SetPaddingRight(6)
                                 .SetBorder(iText.Layout.Borders.Border.NO_BORDER);
 
-                            // Montamos la estructura de la pegatina
-                            tarjetaEtiqueta.AddCell(celdaSuperior);
-                            tarjetaEtiqueta.AddCell(celdaInferior);
+                            tarjetaEtiqueta.AddCell(celdaContenido);
 
                             // Metemos la pegatina dentro de la cuadrícula general
                             celdaGrid.Add(tarjetaEtiqueta);
