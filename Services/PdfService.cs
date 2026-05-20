@@ -7,6 +7,7 @@ using iText.Kernel.Pdf;
 using iText.Layout;
 using iText.Layout.Element;
 using iText.Layout.Properties;
+using iText.Layout.Borders; // 📄 Necesario para el borde de las pegatinas
 
 namespace EtiquetadoAuto.Services
 {
@@ -17,7 +18,7 @@ namespace EtiquetadoAuto.Services
             // 1. BLINDAJE DE MEDIDAS: El espacio máximo útil de un A4 con márgenes de 10mm es 190x277mm
             if (anchoMm > 190) anchoMm = 190;
             if (altoMm > 277) altoMm = 277;
-            if (anchoMm < 20) anchoMm = 20; // Tamaño mínimo seguro para que quepa texto
+            if (anchoMm < 20) anchoMm = 20; 
             if (altoMm < 15) altoMm = 15;
 
             PageSize tamanoHoja = PageSize.A4;
@@ -57,22 +58,23 @@ namespace EtiquetadoAuto.Services
                     {
                         for (int i = 0; i < prod.Cantidad; i++)
                         {
-                            // Crear la celda con tamaño fijo estricto para que actúe como contenedor cerrado
+                            // Crear la celda con tamaño fijo estricto
                             iText.Layout.Element.Cell celdaEtiqueta = new iText.Layout.Element.Cell()
                                 .SetWidth(anchoPuntosEtiqueta)
                                 .SetHeight(altoPuntosEtiqueta)
-                                .SetPadding(4) // Margen interno pequeño para aprovechar el espacio
+                                .SetPadding(4) 
                                 .SetVerticalAlignment(iText.Layout.Properties.VerticalAlignment.MIDDLE)
-                                .SetKeepTogether(true); // Evita que una etiqueta se parta entre dos hojas
+                                .SetKeepTogether(true)
+                                // 🌟 EFECTO PEGATINA: Añade un borde sutil para ver los límites de cada etiqueta
+                                .SetBorder(new SolidBorder(iText.Kernel.Colors.ColorConstants.LIGHT_GRAY, 0.5f));
 
                             Paragraph contenedor = new Paragraph()
                                 .SetTextAlignment(iText.Layout.Properties.TextAlignment.CENTER);
 
-                            // --- CALCULO INTELIGENTE DE FUENTES (ANTI-CORTE) ---
-                            // El código de barras/REF ocupa un tamaño pequeño proporcional al alto
+                            // --- CÁLCULO INTELIGENTE DE FUENTES (TU FORMATO FAVORITO) ---
                             float tamanoRef = (float)(altoMm * 0.18);
-                            if (tamanoRef > 11) tamanoRef = 11; // Techo máximo para que no sea gigante
-                            if (tamanoRef < 7)  tamanoRef = 7;  // Suelo mínimo para que sea legible
+                            if (tamanoRef > 11) tamanoRef = 11; 
+                            if (tamanoRef < 7)  tamanoRef = 7;  
 
                             Text txtCodigo = new Text($"REF: {prod.Codigo}\n")
                                 .SetFontSize(tamanoRef)
@@ -80,27 +82,23 @@ namespace EtiquetadoAuto.Services
                                 .SetFontColor(iText.Kernel.Colors.ColorConstants.DARK_GRAY);
                             contenedor.Add(txtCodigo);
 
-                            // Separador dinámico (se acorta si la etiqueta es estrecha)
+                            // Separador dinámico
                             string separador = anchoMm < 50 ? "---------\n" : "---------------------------\n";
                             contenedor.Add(new Text(separador).SetFontSize(6));
 
-                            // Ajuste extremo del nombre del producto
-                            // Base teórica: el texto ocupará el 25% del alto de la pegatina
+                            // Ajuste del nombre del producto
                             float tamanoLetraNombre = (float)(altoMm * 0.25);
 
-                            // Reducción por longitud de caracteres (si el texto es un párrafo, encoge la letra)
                             if (prod.Nombre.Length > 15 && prod.Nombre.Length <= 30)
                                 tamanoLetraNombre *= 0.8f; 
                             else if (prod.Nombre.Length > 30)
                                 tamanoLetraNombre *= 0.6f;
 
-                            // Reducción extra si la etiqueta es muy estrecha horizontalmente
                             if (anchoMm < 60 && tamanoLetraNombre > 12)
                                 tamanoLetraNombre = 12;
 
-                            // Límites absolutos de lectura
-                            if (tamanoLetraNombre > 24) tamanoLetraNombre = 24; // No sobredimensionar en etiquetas gigantes
-                            if (tamanoLetraNombre < 8)  tamanoLetraNombre = 8;  // No encoger a modo invisible
+                            if (tamanoLetraNombre > 24) tamanoLetraNombre = 24; 
+                            if (tamanoLetraNombre < 8)  tamanoLetraNombre = 8;  
 
                             Text txtNombre = new Text(prod.Nombre)
                                 .SetFontSize(tamanoLetraNombre)
