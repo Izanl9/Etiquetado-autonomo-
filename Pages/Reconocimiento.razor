@@ -185,18 +185,19 @@
         }
     }
 
-   #if ANDROID
+    #if ANDROID
     private void ProcesarConMatrizHorizontal(Xamarin.Google.MLKit.Vision.Text.Text visionText)
     {
         productosDetectados.Clear();
         var todasLasLineas = new List<RawLine>();
 
-        // 1. LISTA NEGRA EXTENDIDA
+        // 1. LISTA NEGRA ROBUSTA (Específica para tus plantillas y datos de ejemplo)
         string[] palabrasBasura = { 
             "telf", "tel.", "telefon", "direccio", "carrer", "c/", "cognom", "nom i", 
             "alliarm", "albaran", "albara", "alberan", "comanda", "pedido", "carer", 
             "fecha", "data", "número", "numero", "pagina", "pag.", "www", "cliente", 
-            "proveedor", "seditesa", "srie", "nif", "cif", "total", "subtotal", "iva", "base" 
+            "proveedor", "seditesa", "srie", "nif", "cif", "total", "subtotal", "iva", "base",
+            "quantitat", "descripcio", "descripció", "edit.org", "sintesis"
         };
 
         foreach (var block in visionText.TextBlocks)
@@ -211,164 +212,134 @@
                     .Replace("í", "i").Replace("ò", "o").Replace("ó", "o").Replace("ú", "u")
                     .Replace("ç", "c");
 
-                // Filtro 1: Palabras clave
+                // Filtro de exclusión por palabras clave
                 if (palabrasBasura.Any(p => minus.Contains(p))) continue;
 
-                // Filtro 2: Expresiones regulares para fulminar DNI/CIF, Fechas y Emails
-                bool tienePatronBasura = System.Text.RegularExpressions.Regex.IsMatch(txt, @"(\d{2}[/-]\d{2}[/-]\d{2,4})|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})|([A-Z]?\d{7,8}[A-Z]?)");
+                // Filtro por Expresiones Regulares: Elimina fechas, emails, teléfonos y números de serie largos (>5 dígitos)
+                bool tienePatronBasura = System.Text.RegularExpressions.Regex.IsMatch(txt, @"(\d{2}[/-]\d{2}[/-]\d{2,4})|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})|([A-Z]?\d{7,15}[A-Z]?)|(^\d{6,}$)");
                 if (tienePatronBasura) continue;
-
-                txt = System.Text.RegularExpressions.Regex.Replace(txt, @"(?i)\b(quantitat|descripcio|descripció|descripción|cantidad|articulo|artículo|codigo|código|cant|ref)\b", "").Trim();
-                
-                if (string.IsNullOrEmpty(txt)) continue;
 
                 var box = line.BoundingBox;
                 if (box == null) continue;
 
-                var corners = line.GetCornerPoints();
-                double x0 = box.Left;
-                double y0 = box.Top;
-                double slope = 0;
-                bool tieneTrayectoria = false;
-
-                if (corners != null && corners.Length >= 2)
-                {
-                    double dx = corners[1].X - corners[0].X;
-                    double dy = corners[1].Y - corners[0].Y;
-                    if (Math.Abs(dx) > 10)
-                    {
-                        x0 = corners[0].X;
-                        y0 = corners[0].Y;
-                        slope = dy / dx;
-                        tieneTrayectoria = true;
-                    }
-                }
-
                 todasLasLineas.Add(new RawLine {
-                    Texto = txt, Top = box.Top, Bottom = box.Bottom,
-                    Left = box.Left, Right = box.Right,
-                    X0 = x0, Y0 = y0, Slope = slope, TieneTrayectoria = tieneTrayectoria
+                    Texto = txt, 
+                    Top = box.Top, 
+                    Bottom = box.Bottom,
+                    Left = box.Left, 
+                    Right = box.Right
                 });
             }
         }
 
         if (!todasLasLineas.Any()) return;
 
-        var filasHorizontales = new List<List<RawLine>>();
-        var lineasPorProcesar = todasLasLineas.OrderBy(l => l.Left).ToList();
+        // 2. ORDENACIÓN Y SEGMENTACIÓN POR CARRILES HORIZONTALES (Ideal para tablas de albaranes)
+        var lineasOrdenadas = todasLasLineas.OrderBy(l => l.Top).ToList();
+        var filas = new List<List<RawLine>>();
 
-        while (lineasPorProcesar.Any())
+        foreach (var linea in lineasOrdenadas)
         {
-            var baseLine = lineasPorProcesar.First();
-            lineasPorProcesar.Remove(baseLine);
-
-            var filaActual = new List<RawLine> { baseLine };
-
-            for (int i = lineasPorProcesar.Count - 1; i >= 0; i--)
+            bool añadida = false;
+            foreach (var fila in filas)
             {
-                var target = lineasPorProcesar[i];
-                double yTeorico = baseLine.TieneTrayectoria 
-                    ? baseLine.Y0 + baseLine.Slope * (target.CenterX - baseLine.X0)
-                    : baseLine.CenterY;
+                double centroFila = fila.Average(l => (l.Top + l.Bottom) / 2.0);
+                double altoFila = fila.Average(l => l.Height);
 
-                if (Math.Abs(target.CenterY - yTeorico) < (baseLine.Height * 0.75))
+                // Tolerancia vertical del 50% del tamaño de fuente de la fila actual
+                if (Math.Abs(linea.CenterY - centroFila) < (altoFila * 0.5))
                 {
-                    filaActual.Add(target);
-                    lineasPorProcesar.RemoveAt(i);
+                    fila.Add(linea);
+                    añadida = true;
+                    break;
                 }
             }
-            filasHorizontales.Add(filaActual);
+
+            if (!añadida) filas.Add(new List<RawLine> { linea });
         }
 
-        var filasOrdenadas = filasHorizontales.OrderBy(f => f.Average(l => l.CenterY)).ToList();
-        var listaRowItems = new List<RowItem>();
+        var productosPreFormados = new List<RowItem>();
 
-        foreach (var fila in filasOrdenadas)
+        // 3. EXTRACCIÓN DE CANTIDADES E IDENTIFICACIÓN DE TEXTO (De Izquierda a Derecha)
+        foreach (var fila in filas)
         {
-            var piezasIzquierdaDerecha = fila.OrderBy(l => l.Left).ToList();
+            var piezas = fila.OrderBy(l => l.Left).ToList();
             
             int cantFila = 0; 
             bool tieneCant = false;
-            var palabrasTexto = new List<string>();
+            var textos = new List<string>();
 
-            foreach (var pieza in piezasIzquierdaDerecha)
+            foreach (var pieza in piezas)
             {
                 string t = pieza.Texto.Trim();
-                if (string.IsNullOrEmpty(t)) continue;
-
-                var mSoloNum = System.Text.RegularExpressions.Regex.Match(t, @"^(\d{1,3})(?:[,.]\d{1,2})?(?:\s*(?:ud|uds|pz|pzs|u))?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-                if (mSoloNum.Success && !tieneCant)
+                
+                // Evaluar si es un número aislado correspondiente a la columna 'Quantitat'
+                var matchNum = System.Text.RegularExpressions.Regex.Match(t, @"^(\d{1,4})(?:\s*(?:ud|uds|pz|pzs|u))?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                
+                if (matchNum.Success && !tieneCant)
                 {
-                    cantFila = int.Parse(mSoloNum.Groups[1].Value);
+                    cantFila = int.Parse(matchNum.Groups[1].Value);
                     tieneCant = true;
                 }
                 else
                 {
-                    palabrasTexto.Add(t);
+                    textos.Add(t);
                 }
             }
 
-            string textoUnido = string.Join(" ", palabrasTexto).Trim();
+            string textoUnido = string.Join(" ", textos).Trim();
 
+            // Por si la captura junta número y descripción en un único bloque (Ej. "15 Separadores...")
             if (!tieneCant)
             {
-                var mIzq = System.Text.RegularExpressions.Regex.Match(textoUnido, @"^(\d{1,3})(?:[,.]\d{1,2})?(?:\s*(?:ud|uds|pz|pzs|u))?\s+(.+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (mIzq.Success)
+                var matchCombinado = System.Text.RegularExpressions.Regex.Match(textoUnido, @"^(\d{1,4})(?:\s*(?:ud|uds|pz|pzs|u))?\s+(.+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (matchCombinado.Success)
                 {
-                    cantFila = int.Parse(mIzq.Groups[1].Value);
-                    textoUnido = mIzq.Groups[2].Value;
+                    cantFila = int.Parse(matchCombinado.Groups[1].Value);
+                    textoUnido = matchCombinado.Groups[2].Value;
                     tieneCant = true;
                 }
             }
 
             textoUnido = System.Text.RegularExpressions.Regex.Replace(textoUnido, @"\s+", " ").Trim();
 
-            if (!string.IsNullOrEmpty(textoUnido))
+            // 4. POLÍTICA ESTRICTA DE ENLACE Y DESCARTE DE SEGUNDAS LÍNEAS
+            if (tieneCant && !string.IsNullOrEmpty(textoUnido))
             {
-                listaRowItems.Add(new RowItem {
+                // Es una línea con cantidad explícita: es obligatoriamente el inicio de un producto nuevo
+                productosPreFormados.Add(new RowItem {
                     Cantidad = cantFila,
                     TextoCompleto = textoUnido,
-                    TieneCantidadExplicita = tieneCant,
+                    TieneCantidadExplicita = true,
                     AverageY = fila.Average(l => l.CenterY),
                     Height = fila.Average(l => l.Height)
                 });
             }
-        }
-
-        var productosPreFormados = new List<RowItem>();
-
-        // 🌟 AQUÍ ESTÁ LA MAGIA: EL FILTRO ESTRICTO 🌟
-        foreach (var item in listaRowItems)
-        {
-            if (!item.TieneCantidadExplicita)
+            else if (!tieneCant && !string.IsNullOrEmpty(textoUnido))
             {
-                // Si no tiene cantidad, solo se salva si está JUSTO DEBAJO de un producto válido (como continuación del nombre)
+                // Es un texto huérfano sin cantidad: comprobamos si es la continuación (segunda línea) del producto anterior
                 if (productosPreFormados.Any())
                 {
                     var ultimoProd = productosPreFormados.Last();
-                    double diffY = item.AverageY - ultimoProd.AverageY;
+                    double diffY = fila.Average(l => l.CenterY) - ultimoProd.AverageY;
 
-                    if (diffY > 0 && diffY < (item.Height * 1.5))
+                    // Si está inmediatamente debajo de él, concatenamos su texto
+                    if (diffY > 0 && diffY < (ultimoProd.Height * 2.5))
                     {
-                        ultimoProd.TextoCompleto = (ultimoProd.TextoCompleto + " " + item.TextoCompleto).Trim();
-                        ultimoProd.AverageY = item.AverageY; 
+                        ultimoProd.TextoCompleto = (ultimoProd.TextoCompleto + " " + textoUnido).Trim();
+                        ultimoProd.AverageY = fila.Average(l => l.CenterY); 
                     }
                 }
-                // Si no cumple, se descarta por completo. ¡Adiós basura suelta!
-                continue; 
             }
-
-            // Si tiene cantidad explícita, es un producto válido y lo añadimos
-            productosPreFormados.Add(item);
         }
 
+        // 5. CONSTRUCCIÓN DE LA LISTA FINAL Y DEPURACIÓN DE RESIDUOS VISUALES
         foreach (var p in productosPreFormados)
         {
             string nombreLimpio = p.TextoCompleto.Trim();
             string soloLetras = System.Text.RegularExpressions.Regex.Replace(nombreLimpio, @"[^a-zA-ZáéíóúÁÉÍÓÚñÑ]", "");
             
-            // Si después de limpiar solo quedan 3 letritas raras, lo matamos también
+            // Filtro de seguridad: descarta ruidos visuales o artefactos menores a 4 caracteres de texto real
             if (soloLetras.Length < 4) continue; 
 
             productosDetectados.Add(new Producto {
@@ -399,7 +370,7 @@
             foreach (var prod in productosParaImprimir)
                 await DB.GuardarProducto(prod);
 
-            // MODIFICACIÓN CRUCIAL: Pasamos las variables de ancho y alto elegidas por el usuario en milímetros
+            // Se pasan las dimensiones elegidas dinámicamente por la interfaz
             string path = GeneradorPdf.GenerarEtiquetas(productosParaImprimir, etiquetaAnchoMm, etiquetaAltoMm);
             
             await Launcher.Default.OpenAsync(new OpenFileRequest {
