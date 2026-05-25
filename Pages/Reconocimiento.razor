@@ -185,11 +185,19 @@
         }
     }
 
-    #if ANDROID
+   #if ANDROID
     private void ProcesarConMatrizHorizontal(Xamarin.Google.MLKit.Vision.Text.Text visionText)
     {
         productosDetectados.Clear();
         var todasLasLineas = new List<RawLine>();
+
+        // 1. LISTA NEGRA EXTENDIDA
+        string[] palabrasBasura = { 
+            "telf", "tel.", "telefon", "direccio", "carrer", "c/", "cognom", "nom i", 
+            "alliarm", "albaran", "albara", "alberan", "comanda", "pedido", "carer", 
+            "fecha", "data", "número", "numero", "pagina", "pag.", "www", "cliente", 
+            "proveedor", "seditesa", "srie", "nif", "cif", "total", "subtotal", "iva", "base" 
+        };
 
         foreach (var block in visionText.TextBlocks)
         {
@@ -203,19 +211,12 @@
                     .Replace("í", "i").Replace("ò", "o").Replace("ó", "o").Replace("ú", "u")
                     .Replace("ç", "c");
 
-                if (minus.Contains("telf") || minus.Contains("telefon") || minus.Contains("tel.") ||
-                    minus.Contains("direccio") || minus.Contains("carrer") || minus.Contains("c/ ") ||
-                    minus.Contains("cognom") || minus.Contains("nom i") || minus.Contains("Teleforn") || 
-                    minus.Contains("alliarm") || minus.Contains("albaran") || minus.Contains("albara") || minus.Contains("alberan") ||
-                    minus.Contains("comanda") || minus.Contains("pedido") || minus.Contains("carer") ||
-                    minus.Contains("fecha") || minus.Contains("data") || minus.Contains("Número") || 
-                    minus.Contains("pagina") || minus.Contains("pag.") || minus.Contains("www") ||
-                    minus.Contains("cliente") || minus.Contains("proveedor") || minus.Contains("numero") ||
-                    minus.Contains("seditesa") || minus.Contains("srie") || 
-                    minus.Contains("nif:") || minus.Contains("cif:"))
-                {
-                    continue; 
-                }
+                // Filtro 1: Palabras clave
+                if (palabrasBasura.Any(p => minus.Contains(p))) continue;
+
+                // Filtro 2: Expresiones regulares para fulminar DNI/CIF, Fechas y Emails
+                bool tienePatronBasura = System.Text.RegularExpressions.Regex.IsMatch(txt, @"(\d{2}[/-]\d{2}[/-]\d{2,4})|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})|([A-Z]?\d{7,8}[A-Z]?)");
+                if (tienePatronBasura) continue;
 
                 txt = System.Text.RegularExpressions.Regex.Replace(txt, @"(?i)\b(quantitat|descripcio|descripció|descripción|cantidad|articulo|artículo|codigo|código|cant|ref)\b", "").Trim();
                 
@@ -244,15 +245,9 @@
                 }
 
                 todasLasLineas.Add(new RawLine {
-                    Texto = txt,
-                    Top = box.Top,
-                    Bottom = box.Bottom,
-                    Left = box.Left,
-                    Right = box.Right,
-                    X0 = x0,
-                    Y0 = y0,
-                    Slope = slope,
-                    TieneTrayectoria = tieneTrayectoria
+                    Texto = txt, Top = box.Top, Bottom = box.Bottom,
+                    Left = box.Left, Right = box.Right,
+                    X0 = x0, Y0 = y0, Slope = slope, TieneTrayectoria = tieneTrayectoria
                 });
             }
         }
@@ -343,21 +338,28 @@
 
         var productosPreFormados = new List<RowItem>();
 
+        // 🌟 AQUÍ ESTÁ LA MAGIA: EL FILTRO ESTRICTO 🌟
         foreach (var item in listaRowItems)
         {
-            if (!item.TieneCantidadExplicita && productosPreFormados.Any())
+            if (!item.TieneCantidadExplicita)
             {
-                var ultimoProd = productosPreFormados.Last();
-                double diffY = item.AverageY - ultimoProd.AverageY;
-
-                if (diffY > 0 && diffY < (item.Height * 1.5))
+                // Si no tiene cantidad, solo se salva si está JUSTO DEBAJO de un producto válido (como continuación del nombre)
+                if (productosPreFormados.Any())
                 {
-                    ultimoProd.TextoCompleto = (ultimoProd.TextoCompleto + " " + item.TextoCompleto).Trim();
-                    ultimoProd.AverageY = item.AverageY; 
-                    continue;
+                    var ultimoProd = productosPreFormados.Last();
+                    double diffY = item.AverageY - ultimoProd.AverageY;
+
+                    if (diffY > 0 && diffY < (item.Height * 1.5))
+                    {
+                        ultimoProd.TextoCompleto = (ultimoProd.TextoCompleto + " " + item.TextoCompleto).Trim();
+                        ultimoProd.AverageY = item.AverageY; 
+                    }
                 }
+                // Si no cumple, se descarta por completo. ¡Adiós basura suelta!
+                continue; 
             }
 
+            // Si tiene cantidad explícita, es un producto válido y lo añadimos
             productosPreFormados.Add(item);
         }
 
@@ -366,6 +368,7 @@
             string nombreLimpio = p.TextoCompleto.Trim();
             string soloLetras = System.Text.RegularExpressions.Regex.Replace(nombreLimpio, @"[^a-zA-ZáéíóúÁÉÍÓÚñÑ]", "");
             
+            // Si después de limpiar solo quedan 3 letritas raras, lo matamos también
             if (soloLetras.Length < 4) continue; 
 
             productosDetectados.Add(new Producto {
