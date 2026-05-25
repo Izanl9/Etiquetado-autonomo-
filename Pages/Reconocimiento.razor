@@ -187,7 +187,7 @@
         productosDetectados.Clear();
         var todasLasLineas = new List<RawLine>();
 
-        // 1. CÁLCULO DE INCLINACIÓN (Filtra bloques verticales o ruidos)
+        // 1. CÁLCULO DE INCLINACIÓN
         double sumaPendientes = 0;
         int contadorPendientes = 0;
 
@@ -200,11 +200,9 @@
                 {
                     double dx = corners[1].X - corners[0].X;
                     double dy = corners[1].Y - corners[0].Y;
-                    
                     if (Math.Abs(dx) > 30)
                     {
                         double slope = dy / dx;
-                        // Solo aceptamos inclinaciones horizontales lógicas (menores a ~10 grados)
                         if (Math.Abs(slope) < 0.18) 
                         {
                             sumaPendientes += slope;
@@ -217,7 +215,7 @@
 
         double pendienteMedia = contadorPendientes > 0 ? sumaPendientes / contadorPendientes : 0;
 
-        // 2. FILTRADO INICIAL DE BASURA COMÚN
+        // 2. FILTRADO INICIAL DE CABECERAS Y DATOS DE EMPRESA
         string[] palabrasBasura = { 
             "telf", "tel.", "telefon", "direccio", "carrer", "c/", "cognom", "nom i", 
             "alliarm", "albaran", "albara", "alberan", "comanda", "pedido", "carer", 
@@ -240,7 +238,6 @@
 
                 if (palabrasBasura.Any(p => minus.Contains(p))) continue;
 
-                // Filtro seguro para Fechas, Emails o Números de Serie extremadamente largos
                 bool tienePatronBasura = System.Text.RegularExpressions.Regex.IsMatch(txt, @"(\d{2}[/-]\d{2}[/-]\d{2,4})|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})|([A-Z]?\d{7,15}[A-Z]?)");
                 if (tienePatronBasura) continue;
 
@@ -249,8 +246,6 @@
 
                 double centerX = (box.Left + box.Right) / 2.0;
                 double centerY = (box.Top + box.Bottom) / 2.0;
-                
-                // Aplicar matriz de corrección geométrica
                 double yCompensada = centerY - (pendienteMedia * centerX);
 
                 todasLasLineas.Add(new RawLine {
@@ -266,7 +261,7 @@
 
         if (!todasLasLineas.Any()) return;
 
-        // 3. AGRUPACIÓN FLEXIBLE POR CARRILES (Tolerancia optimizada al 75% del alto de fuente)
+        // 3. AGRUPACIÓN HORIZONTAL POR CARRILES (Tolerancia estándar)
         var lineasOrdenadas = todasLasLineas.OrderBy(l => l.CompensatedY).ToList();
         var filas = new List<List<RawLine>>();
 
@@ -285,17 +280,15 @@
                     break;
                 }
             }
-
             if (!añadida) filas.Add(new List<RawLine> { linea });
         }
 
-        // 4. EXTRACCIÓN DE CONTENIDO POR FILA
+        // 4. PRE-FORMADO DE ITEMS POR FILA
         var productosPreFormados = new List<RowItem>();
 
         foreach (var fila in filas)
         {
             var piezas = fila.OrderBy(l => l.Left).ToList();
-            
             int cantFila = 0; 
             bool tieneCant = false;
             var textos = new List<string>();
@@ -335,7 +328,6 @@
 
             textoUnido = System.Text.RegularExpressions.Regex.Replace(textoUnido, @"\s+", " ").Trim();
 
-            // Guardamos todo elemento que aporte datos (sea solo número, solo texto o ambos)
             if (tieneCant || !string.IsNullOrEmpty(textoUnido))
             {
                 productosPreFormados.Add(new RowItem {
@@ -348,70 +340,72 @@
             }
         }
 
-        // 5. ENSAMBLADOR INTELIGENTE (Une columnas separadas y multi-líneas)
-        var listaFinalRowItems = new List<RowItem>();
-
+        // 5. ENSAMBLADOR SEGURO EN DOS FASES (Elimina el efecto embudo/acordeón)
+        
+        // Fase A: Emparejar de forma cruzada columnas de cantidad sueltas y descripciones de la misma línea horizontal
         for (int i = 0; i < productosPreFormados.Count; i++)
         {
             var actual = productosPreFormados[i];
 
-            // Escenario A: Si la fila tiene CORTADA la cantidad sola (sin texto)
             if (actual.TieneCantidadExplicita && string.IsNullOrEmpty(actual.TextoCompleto))
             {
-                bool emparejado = false;
-                // Buscamos en las siguientes líneas cercanas un texto huérfano sin cantidad
-                for (int j = i + 1; j < Math.Min(productosPreFormados.Count, i + 3); j++)
+                for (int j = 0; j < productosPreFormados.Count; j++)
                 {
-                    var siguiente = productosPreFormados[j];
-                    if (!siguiente.TieneCantidadExplicita && !string.IsNullOrEmpty(siguiente.TextoCompleto))
+                    var destino = productosPreFormados[j];
+                    if (!destino.TieneCantidadExplicita && !string.IsNullOrEmpty(destino.TextoCompleto))
                     {
-                        double distY = Math.Abs(siguiente.AverageY - actual.AverageY);
-                        if (distY < (actual.Height * 2.0))
+                        double distY = Math.Abs(destino.AverageY - actual.AverageY);
+                        // Tolerancia estricta en el mismo renglón exacto
+                        if (distY < (actual.Height * 1.2))
                         {
-                            siguiente.Cantidad = actual.Cantidad;
-                            siguiente.TieneCantidadExplicita = true;
-                            emparejado = true;
+                            destino.Cantidad = actual.Cantidad;
+                            destino.TieneCantidadExplicita = true;
+                            actual.TextoCompleto = ""; // Desactivamos el número suelto ya asignado
                             break;
                         }
                     }
                 }
-                if (emparejado) continue; // Saltamos este renglón vacío porque ya se unió al texto
             }
+        }
 
-            // Escenario B: Si es texto suelto (sin cantidad) -> Comprobamos si es la continuación del renglón anterior
-            if (!actual.TieneCantidadExplicita && !string.IsNullOrEmpty(actual.TextoCompleto))
+        // Fase B: Agrupar saltos de línea de texto legítimos (Multilíneas reales)
+        var listaAgrupadaFinal = new List<RowItem>();
+        foreach (var item in productosPreFormados)
+        {
+            if (string.IsNullOrEmpty(item.TextoCompleto) && item.TieneCantidadExplicita) continue; 
+            if (string.IsNullOrEmpty(item.TextoCompleto)) continue;
+
+            if (!item.TieneCantidadExplicita && listaAgrupadaFinal.Any())
             {
-                if (listaFinalRowItems.Any())
-                {
-                    var ultimo = listaFinalRowItems.Last();
-                    double distY = actual.AverageY - ultimo.AverageY;
+                var ultimo = listaAgrupadaFinal.Last();
+                double distY = item.AverageY - ultimo.AverageY;
 
-                    if (distY > 0 && distY < (ultimo.Height * 2.2))
-                    {
-                        ultimo.TextoCompleto = (ultimo.TextoCompleto + " " + actual.TextoCompleto).Trim();
-                        ultimo.AverageY = actual.AverageY; 
-                        continue;
-                    }
+                // UMBRAL DE SEGURIDAD MÁXIMO: 1.3 veces la altura de la fuente. 
+                // Si la distancia es mayor, NO es multilínea, ¡es otro producto sin cantidad!
+                if (distY > 0 && distY < (ultimo.Height * 1.3))
+                {
+                    ultimo.TextoCompleto = (ultimo.TextoCompleto + " " + item.TextoCompleto).Trim();
+                    ultimo.AverageY = item.AverageY; 
+                    continue;
                 }
             }
 
-            listaFinalRowItems.Add(actual);
+            listaAgrupadaFinal.Add(item);
         }
 
         // 6. VOLCADO FINAL A PANTALLA
-        foreach (var p in listaFinalRowItems)
+        foreach (var p in listaAgrupadaFinal)
         {
-            if (p.TieneCantidadExplicita && !string.IsNullOrEmpty(p.TextoCompleto))
+            if (!string.IsNullOrEmpty(p.TextoCompleto))
             {
                 string nombreLimpio = p.TextoCompleto.Trim();
                 
-                // Validación de seguridad: debe contener caracteres alfabéticos legítimos
                 string soloLetras = System.Text.RegularExpressions.Regex.Replace(nombreLimpio, @"[^a-zA-ZáéíóúÁÉÍÓÚñÑ]", "");
                 if (soloLetras.Length < 3) continue; 
 
                 productosDetectados.Add(new Producto {
                     Nombre = nombreLimpio,
-                    Cantidad = p.Cantidad,
+                    Cantidad = p.Cantidad, // Si el OCR falló en el número, saldrá 0 para que sumes con el botón '+'
                     Codigo = "OCR-" + DateTime.Now.ToString("mmssfff") + productosDetectados.Count
                 });
             }
