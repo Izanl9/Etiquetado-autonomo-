@@ -26,7 +26,7 @@
             else
             {
                 <button class="btn btn-success btn-lg w-100 py-3 shadow-sm mb-4" @onclick="CapturarAlbaran">
-                    <i class="oi oi-camera"></i> ESCANEAR AHORA
+                    <i class="oi oi-camera"></i> ESCANEAR HOJA COMPLETA
                 </button>
             }
 
@@ -94,7 +94,6 @@
 </div>
 
 @code {
-    // Variables de control para las dimensiones
     private double etiquetaAnchoMm = 80;
     private double etiquetaAltoMm = 50;
     private string presetSeleccionado = "estandar";
@@ -117,10 +116,7 @@
         public int Height => Bottom - Top;
         public double CenterX => (Left + Right) / 2.0;
         public double CenterY => (Top + Bottom) / 2.0;
-        public double X0 { get; set; }
-        public double Y0 { get; set; }
-        public double Slope { get; set; }
-        public bool TieneTrayectoria { get; set; } = false;
+        public double CompensatedY { get; set; } // Coordenada corregida según la rotación de la página
     }
 
     public class RowItem
@@ -150,7 +146,7 @@
             var photo = await MediaPicker.CapturePhotoAsync();
             if (photo == null) return;
 
-            estadoMensaje = "Procesando matriz de texto...";
+            estadoMensaje = "Calculando perspectiva y limpiando ruido...";
             StateHasChanged(); 
 
             #if ANDROID
@@ -191,7 +187,33 @@
         productosDetectados.Clear();
         var todasLasLineas = new List<RawLine>();
 
-        // 1. LISTA NEGRA ROBUSTA (Específica para tus plantillas y datos de ejemplo)
+        // 1. CÁLCULO VECTORIAL DEL ÁNGULO DE ROTACIÓN DE LA HOJA
+        double sumaPendientes = 0;
+        int contadorPendientes = 0;
+
+        foreach (var block in visionText.TextBlocks)
+        {
+            foreach (var line in block.Lines)
+            {
+                var corners = line.GetCornerPoints();
+                if (corners != null && corners.Length >= 2 && corners[0] != null && corners[1] != null)
+                {
+                    double dx = corners[1].X - corners[0].X;
+                    double dy = corners[1].Y - corners[0].Y;
+                    
+                    // Solo usamos líneas lo suficientemente largas para estimar con precisión la inclinación
+                    if (Math.Abs(dx) > 20)
+                    {
+                        sumaPendientes += (dy / dx);
+                        contadorPendientes++;
+                    }
+                }
+            }
+        }
+
+        double pendienteMedia = contadorPendientes > 0 ? sumaPendientes / contadorPendientes : 0;
+
+        // 2. LISTA NEGRA EXTENDIDA
         string[] palabrasBasura = { 
             "telf", "tel.", "telefon", "direccio", "carrer", "c/", "cognom", "nom i", 
             "alliarm", "albaran", "albara", "alberan", "comanda", "pedido", "carer", 
@@ -212,30 +234,36 @@
                     .Replace("í", "i").Replace("ò", "o").Replace("ó", "o").Replace("ú", "u")
                     .Replace("ç", "c");
 
-                // Filtro de exclusión por palabras clave
                 if (palabrasBasura.Any(p => minus.Contains(p))) continue;
 
-                // Filtro por Expresiones Regulares: Elimina fechas, emails, teléfonos y números de serie largos (>5 dígitos)
-                bool tienePatronBasura = System.Text.RegularExpressions.Regex.IsMatch(txt, @"(\d{2}[/-]\d{2}[/-]\d{2,4})|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})|([A-Z]?\d{7,15}[A-Z]?)|(^\d{6,}$)");
+                // Modificado a \d{5,} para capturar números de albarán cortos como el 87530
+                bool tienePatronBasura = System.Text.RegularExpressions.Regex.IsMatch(txt, @"(\d{2}[/-]\d{2}[/-]\d{2,4})|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})|([A-Z]?\d{6,15}[A-Z]?)|(^\d{5,}$)");
                 if (tienePatronBasura) continue;
 
                 var box = line.BoundingBox;
                 if (box == null) continue;
+
+                double centerX = (box.Left + box.Right) / 2.0;
+                double centerY = (box.Top + box.Bottom) / 2.0;
+                
+                // Matriz de corrección matemática de altura basada en su posición X y la inclinación general
+                double yCompensada = centerY - (pendienteMedia * centerX);
 
                 todasLasLineas.Add(new RawLine {
                     Texto = txt, 
                     Top = box.Top, 
                     Bottom = box.Bottom,
                     Left = box.Left, 
-                    Right = box.Right
+                    Right = box.Right,
+                    CompensatedY = yCompensada
                 });
             }
         }
 
         if (!todasLasLineas.Any()) return;
 
-        // 2. ORDENACIÓN Y SEGMENTACIÓN POR CARRILES HORIZONTALES (Ideal para tablas de albaranes)
-        var lineasOrdenadas = todasLasLineas.OrderBy(l => l.Top).ToList();
+        // 3. AGRUPACIÓN POR CARRILES USANDO LA ALTURA COMPENSADA (Inmune a rotaciones)
+        var lineasOrdenadas = todasLasLineas.OrderBy(l => l.CompensatedY).ToList();
         var filas = new List<List<RawLine>>();
 
         foreach (var linea in lineasOrdenadas)
@@ -243,11 +271,11 @@
             bool añadida = false;
             foreach (var fila in filas)
             {
-                double centroFila = fila.Average(l => (l.Top + l.Bottom) / 2.0);
+                double centroFilaComp = fila.Average(l => l.CompensatedY);
                 double altoFila = fila.Average(l => l.Height);
 
-                // Tolerancia vertical del 50% del tamaño de fuente de la fila actual
-                if (Math.Abs(linea.CenterY - centroFila) < (altoFila * 0.5))
+                // Al estar la Y compensada, la tolerancia puede ser estricta y limpia (40% de la altura de fuente)
+                if (Math.Abs(linea.CompensatedY - centroFilaComp) < (altoFila * 0.4))
                 {
                     fila.Add(linea);
                     añadida = true;
@@ -260,7 +288,7 @@
 
         var productosPreFormados = new List<RowItem>();
 
-        // 3. EXTRACCIÓN DE CANTIDADES E IDENTIFICACIÓN DE TEXTO (De Izquierda a Derecha)
+        // 4. EXTRACCIÓN Y LIMPIEZA DE COLUMNAS
         foreach (var fila in filas)
         {
             var piezas = fila.OrderBy(l => l.Left).ToList();
@@ -272,8 +300,6 @@
             foreach (var pieza in piezas)
             {
                 string t = pieza.Texto.Trim();
-                
-                // Evaluar si es un número aislado correspondiente a la columna 'Quantitat'
                 var matchNum = System.Text.RegularExpressions.Regex.Match(t, @"^(\d{1,4})(?:\s*(?:ud|uds|pz|pzs|u))?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 
                 if (matchNum.Success && !tieneCant)
@@ -289,7 +315,6 @@
 
             string textoUnido = string.Join(" ", textos).Trim();
 
-            // Por si la captura junta número y descripción en un único bloque (Ej. "15 Separadores...")
             if (!tieneCant)
             {
                 var matchCombinado = System.Text.RegularExpressions.Regex.Match(textoUnido, @"^(\d{1,4})(?:\s*(?:ud|uds|pz|pzs|u))?\s+(.+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
@@ -301,45 +326,48 @@
                 }
             }
 
+            // Si la cantidad se detectó por separado pero el bloque de texto duplicó el número por solapamiento, lo limpiamos
+            if (tieneCant)
+            {
+                textoUnido = System.Text.RegularExpressions.Regex.Replace(textoUnido, @"^\d+(?:\s*(?:ud|uds|pz|pzs|u))?\s+", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            }
+
             textoUnido = System.Text.RegularExpressions.Regex.Replace(textoUnido, @"\s+", " ").Trim();
 
-            // 4. POLÍTICA ESTRICTA DE ENLACE Y DESCARTE DE SEGUNDAS LÍNEAS
+            // 5. UNIÓN ENRIQUECIDA DE MULTI-LÍNEAS
             if (tieneCant && !string.IsNullOrEmpty(textoUnido))
             {
-                // Es una línea con cantidad explícita: es obligatoriamente el inicio de un producto nuevo
                 productosPreFormados.Add(new RowItem {
                     Cantidad = cantFila,
                     TextoCompleto = textoUnido,
                     TieneCantidadExplicita = true,
-                    AverageY = fila.Average(l => l.CenterY),
+                    AverageY = fila.Average(l => l.CompensatedY),
                     Height = fila.Average(l => l.Height)
                 });
             }
             else if (!tieneCant && !string.IsNullOrEmpty(textoUnido))
             {
-                // Es un texto huérfano sin cantidad: comprobamos si es la continuación (segunda línea) del producto anterior
                 if (productosPreFormados.Any())
                 {
                     var ultimoProd = productosPreFormados.Last();
-                    double diffY = fila.Average(l => l.CenterY) - ultimoProd.AverageY;
+                    double diffY = fila.Average(l => l.CompensatedY) - ultimoProd.AverageY;
 
-                    // Si está inmediatamente debajo de él, concatenamos su texto
-                    if (diffY > 0 && diffY < (ultimoProd.Height * 2.5))
+                    // Evaluado usando también distancias compensadas
+                    if (diffY > 0 && diffY < (ultimoProd.Height * 2.2))
                     {
                         ultimoProd.TextoCompleto = (ultimoProd.TextoCompleto + " " + textoUnido).Trim();
-                        ultimoProd.AverageY = fila.Average(l => l.CenterY); 
+                        ultimoProd.AverageY = fila.Average(l => l.CompensatedY); 
                     }
                 }
             }
         }
 
-        // 5. CONSTRUCCIÓN DE LA LISTA FINAL Y DEPURACIÓN DE RESIDUOS VISUALES
+        // 6. VOLCADO FINAL
         foreach (var p in productosPreFormados)
         {
             string nombreLimpio = p.TextoCompleto.Trim();
             string soloLetras = System.Text.RegularExpressions.Regex.Replace(nombreLimpio, @"[^a-zA-ZáéíóúÁÉÍÓÚñÑ]", "");
             
-            // Filtro de seguridad: descarta ruidos visuales o artefactos menores a 4 caracteres de texto real
             if (soloLetras.Length < 4) continue; 
 
             productosDetectados.Add(new Producto {
@@ -370,7 +398,6 @@
             foreach (var prod in productosParaImprimir)
                 await DB.GuardarProducto(prod);
 
-            // Se pasan las dimensiones elegidas dinámicamente por la interfaz
             string path = GeneradorPdf.GenerarEtiquetas(productosParaImprimir, etiquetaAnchoMm, etiquetaAltoMm);
             
             await Launcher.Default.OpenAsync(new OpenFileRequest {
