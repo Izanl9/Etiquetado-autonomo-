@@ -116,7 +116,7 @@
         public int Height => Bottom - Top;
         public double CenterX => (Left + Right) / 2.0;
         public double CenterY => (Top + Bottom) / 2.0;
-        public double CompensatedY { get; set; } // Coordenada corregida según la rotación de la página
+        public double CompensatedY { get; set; } 
     }
 
     public class RowItem
@@ -146,7 +146,7 @@
             var photo = await MediaPicker.CapturePhotoAsync();
             if (photo == null) return;
 
-            estadoMensaje = "Calculando perspectiva y limpiando ruido...";
+            estadoMensaje = "Analizando geometría de la página...";
             StateHasChanged(); 
 
             #if ANDROID
@@ -187,7 +187,7 @@
         productosDetectados.Clear();
         var todasLasLineas = new List<RawLine>();
 
-        // 1. CÁLCULO VECTORIAL DEL ÁNGULO DE ROTACIÓN DE LA HOJA
+        // 1. CÁLCULO DE INCLINACIÓN (Filtra bloques verticales o ruidos)
         double sumaPendientes = 0;
         int contadorPendientes = 0;
 
@@ -201,11 +201,15 @@
                     double dx = corners[1].X - corners[0].X;
                     double dy = corners[1].Y - corners[0].Y;
                     
-                    // Solo usamos líneas lo suficientemente largas para estimar con precisión la inclinación
-                    if (Math.Abs(dx) > 20)
+                    if (Math.Abs(dx) > 30)
                     {
-                        sumaPendientes += (dy / dx);
-                        contadorPendientes++;
+                        double slope = dy / dx;
+                        // Solo aceptamos inclinaciones horizontales lógicas (menores a ~10 grados)
+                        if (Math.Abs(slope) < 0.18) 
+                        {
+                            sumaPendientes += slope;
+                            contadorPendientes++;
+                        }
                     }
                 }
             }
@@ -213,7 +217,7 @@
 
         double pendienteMedia = contadorPendientes > 0 ? sumaPendientes / contadorPendientes : 0;
 
-        // 2. LISTA NEGRA EXTENDIDA
+        // 2. FILTRADO INICIAL DE BASURA COMÚN
         string[] palabrasBasura = { 
             "telf", "tel.", "telefon", "direccio", "carrer", "c/", "cognom", "nom i", 
             "alliarm", "albaran", "albara", "alberan", "comanda", "pedido", "carer", 
@@ -236,8 +240,8 @@
 
                 if (palabrasBasura.Any(p => minus.Contains(p))) continue;
 
-                // Modificado a \d{5,} para capturar números de albarán cortos como el 87530
-                bool tienePatronBasura = System.Text.RegularExpressions.Regex.IsMatch(txt, @"(\d{2}[/-]\d{2}[/-]\d{2,4})|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})|([A-Z]?\d{6,15}[A-Z]?)|(^\d{5,}$)");
+                // Filtro seguro para Fechas, Emails o Números de Serie extremadamente largos
+                bool tienePatronBasura = System.Text.RegularExpressions.Regex.IsMatch(txt, @"(\d{2}[/-]\d{2}[/-]\d{2,4})|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})|([A-Z]?\d{7,15}[A-Z]?)");
                 if (tienePatronBasura) continue;
 
                 var box = line.BoundingBox;
@@ -246,7 +250,7 @@
                 double centerX = (box.Left + box.Right) / 2.0;
                 double centerY = (box.Top + box.Bottom) / 2.0;
                 
-                // Matriz de corrección matemática de altura basada en su posición X y la inclinación general
+                // Aplicar matriz de corrección geométrica
                 double yCompensada = centerY - (pendienteMedia * centerX);
 
                 todasLasLineas.Add(new RawLine {
@@ -262,7 +266,7 @@
 
         if (!todasLasLineas.Any()) return;
 
-        // 3. AGRUPACIÓN POR CARRILES USANDO LA ALTURA COMPENSADA (Inmune a rotaciones)
+        // 3. AGRUPACIÓN FLEXIBLE POR CARRILES (Tolerancia optimizada al 75% del alto de fuente)
         var lineasOrdenadas = todasLasLineas.OrderBy(l => l.CompensatedY).ToList();
         var filas = new List<List<RawLine>>();
 
@@ -274,8 +278,7 @@
                 double centroFilaComp = fila.Average(l => l.CompensatedY);
                 double altoFila = fila.Average(l => l.Height);
 
-                // Al estar la Y compensada, la tolerancia puede ser estricta y limpia (40% de la altura de fuente)
-                if (Math.Abs(linea.CompensatedY - centroFilaComp) < (altoFila * 0.4))
+                if (Math.Abs(linea.CompensatedY - centroFilaComp) < (altoFila * 0.75))
                 {
                     fila.Add(linea);
                     añadida = true;
@@ -286,9 +289,9 @@
             if (!añadida) filas.Add(new List<RawLine> { linea });
         }
 
+        // 4. EXTRACCIÓN DE CONTENIDO POR FILA
         var productosPreFormados = new List<RowItem>();
 
-        // 4. EXTRACCIÓN Y LIMPIEZA DE COLUMNAS
         foreach (var fila in filas)
         {
             var piezas = fila.OrderBy(l => l.Left).ToList();
@@ -325,56 +328,93 @@
                     tieneCant = true;
                 }
             }
-
-            // Si la cantidad se detectó por separado pero el bloque de texto duplicó el número por solapamiento, lo limpiamos
-            if (tieneCant)
+            else
             {
                 textoUnido = System.Text.RegularExpressions.Regex.Replace(textoUnido, @"^\d+(?:\s*(?:ud|uds|pz|pzs|u))?\s+", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             }
 
             textoUnido = System.Text.RegularExpressions.Regex.Replace(textoUnido, @"\s+", " ").Trim();
 
-            // 5. UNIÓN ENRIQUECIDA DE MULTI-LÍNEAS
-            if (tieneCant && !string.IsNullOrEmpty(textoUnido))
+            // Guardamos todo elemento que aporte datos (sea solo número, solo texto o ambos)
+            if (tieneCant || !string.IsNullOrEmpty(textoUnido))
             {
                 productosPreFormados.Add(new RowItem {
                     Cantidad = cantFila,
                     TextoCompleto = textoUnido,
-                    TieneCantidadExplicita = true,
+                    TieneCantidadExplicita = tieneCant,
                     AverageY = fila.Average(l => l.CompensatedY),
                     Height = fila.Average(l => l.Height)
                 });
             }
-            else if (!tieneCant && !string.IsNullOrEmpty(textoUnido))
-            {
-                if (productosPreFormados.Any())
-                {
-                    var ultimoProd = productosPreFormados.Last();
-                    double diffY = fila.Average(l => l.CompensatedY) - ultimoProd.AverageY;
+        }
 
-                    // Evaluado usando también distancias compensadas
-                    if (diffY > 0 && diffY < (ultimoProd.Height * 2.2))
+        // 5. ENSAMBLADOR INTELIGENTE (Une columnas separadas y multi-líneas)
+        var listaFinalRowItems = new List<RowItem>();
+
+        for (int i = 0; i < productosPreFormados.Count; i++)
+        {
+            var actual = productosPreFormados[i];
+
+            // Escenario A: Si la fila tiene CORTADA la cantidad sola (sin texto)
+            if (actual.TieneCantidadExplicita && string.IsNullOrEmpty(actual.TextoCompleto))
+            {
+                bool emparejado = false;
+                // Buscamos en las siguientes líneas cercanas un texto huérfano sin cantidad
+                for (int j = i + 1; j < Math.Min(productosPreFormados.Count, i + 3); j++)
+                {
+                    var siguiente = productosPreFormados[j];
+                    if (!siguiente.TieneCantidadExplicita && !string.IsNullOrEmpty(siguiente.TextoCompleto))
                     {
-                        ultimoProd.TextoCompleto = (ultimoProd.TextoCompleto + " " + textoUnido).Trim();
-                        ultimoProd.AverageY = fila.Average(l => l.CompensatedY); 
+                        double distY = Math.Abs(siguiente.AverageY - actual.AverageY);
+                        if (distY < (actual.Height * 2.0))
+                        {
+                            siguiente.Cantidad = actual.Cantidad;
+                            siguiente.TieneCantidadExplicita = true;
+                            emparejado = true;
+                            break;
+                        }
+                    }
+                }
+                if (emparejado) continue; // Saltamos este renglón vacío porque ya se unió al texto
+            }
+
+            // Escenario B: Si es texto suelto (sin cantidad) -> Comprobamos si es la continuación del renglón anterior
+            if (!actual.TieneCantidadExplicita && !string.IsNullOrEmpty(actual.TextoCompleto))
+            {
+                if (listaFinalRowItems.Any())
+                {
+                    var ultimo = listaFinalRowItems.Last();
+                    double distY = actual.AverageY - ultimo.AverageY;
+
+                    if (distY > 0 && distY < (ultimo.Height * 2.2))
+                    {
+                        ultimo.TextoCompleto = (ultimo.TextoCompleto + " " + actual.TextoCompleto).Trim();
+                        ultimo.AverageY = actual.AverageY; 
+                        continue;
                     }
                 }
             }
+
+            listaFinalRowItems.Add(actual);
         }
 
-        // 6. VOLCADO FINAL
-        foreach (var p in productosPreFormados)
+        // 6. VOLCADO FINAL A PANTALLA
+        foreach (var p in listaFinalRowItems)
         {
-            string nombreLimpio = p.TextoCompleto.Trim();
-            string soloLetras = System.Text.RegularExpressions.Regex.Replace(nombreLimpio, @"[^a-zA-ZáéíóúÁÉÍÓÚñÑ]", "");
-            
-            if (soloLetras.Length < 4) continue; 
+            if (p.TieneCantidadExplicita && !string.IsNullOrEmpty(p.TextoCompleto))
+            {
+                string nombreLimpio = p.TextoCompleto.Trim();
+                
+                // Validación de seguridad: debe contener caracteres alfabéticos legítimos
+                string soloLetras = System.Text.RegularExpressions.Regex.Replace(nombreLimpio, @"[^a-zA-ZáéíóúÁÉÍÓÚñÑ]", "");
+                if (soloLetras.Length < 3) continue; 
 
-            productosDetectados.Add(new Producto {
-                Nombre = nombreLimpio,
-                Cantidad = p.Cantidad,
-                Codigo = "OCR-" + DateTime.Now.ToString("mmssfff")
-            });
+                productosDetectados.Add(new Producto {
+                    Nombre = nombreLimpio,
+                    Cantidad = p.Cantidad,
+                    Codigo = "OCR-" + DateTime.Now.ToString("mmssfff") + productosDetectados.Count
+                });
+            }
         }
     }
     #endif
