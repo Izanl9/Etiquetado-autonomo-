@@ -7,7 +7,6 @@ using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 
-// SOLUCIÓN AL ERROR CS0104: Creamos un alias exclusivo para evitar conflictos con MAUI Graphics
 using QuestColors = QuestPDF.Helpers.Colors;
 
 namespace EtiquetadoAuto.Services
@@ -25,61 +24,93 @@ namespace EtiquetadoAuto.Services
             string rutaCarpeta = FileSystem.CacheDirectory; 
             string rutaCompleta = Path.Combine(rutaCarpeta, nombreArchivo);
 
+            // 1. Desglosar todas las unidades físicas de las etiquetas en una lista plana
+            var listaPlanaEtiquetas = new List<Producto>();
+            foreach (var prod in productos)
+            {
+                for (int i = 0; i < prod.Cantidad; i++)
+                {
+                    listaPlanaEtiquetas.Add(prod);
+                }
+            }
+
+            // 2. CÁLCULO GEOMÉTRICO DINÁMICO (Para evitar deformaciones)
+            // El ancho de un papel A4 es fijo: 210mm.
+            // Calculamos cuántas columnas reales caben físicamente según el ancho configurado.
+            int columnasQueCaben = (int)Math.Floor(210.0 / anchoMm);
+            if (columnasQueCaben < 1) columnasQueCaben = 1;
+
+            // Calculamos el espacio sobrante en horizontal para repartirlo a los lados (centrado perfecto)
+            double espacioSobrante = 210.0 - (columnasQueCaben * anchoMm);
+            float margenHorizontalMm = (float)(espacioSobrante / 2.0);
+
+            // 3. GENERACIÓN DEL DOCUMENTO
             Document.Create(container =>
             {
                 container.Page(page =>
                 {
                     page.Size(PageSizes.A4);
-                    page.Margin(10, Unit.Millimetre);
-                    page.PageColor(QuestColors.White); // Corregido con el alias
+                    
+                    // Aplicamos el margen dinámico para que queden centradas en la plantilla A4
+                    page.MarginLeft(margenHorizontalMm, Unit.Millimetre);
+                    page.MarginRight(margenHorizontalMm, Unit.Millimetre);
+                    page.MarginTop(10, Unit.Millimetre);
+                    page.MarginBottom(10, Unit.Millimetre);
+                    page.PageColor(QuestColors.White);
 
-                    page.Content().Grid(grid =>
+                    page.Content().Column(mainColumn =>
                     {
-                        grid.Columns(3);
-                        grid.Spacing(4, Unit.Millimetre); 
+                        // Espacio de separación vertical entre filas de etiquetas (3mm de margen de corte)
+                        mainColumn.Spacing(3, Unit.Millimetre);
 
-                        foreach (var prod in productos)
+                        int index = 0;
+                        while (index < listaPlanaEtiquetas.Count)
                         {
-                            for (int i = 0; i < prod.Cantidad; i++)
+                            // Creamos una fila horizontal manual
+                            mainColumn.Item().Row(row =>
                             {
-                                grid.Item(1) 
-                                    .Background(QuestColors.White) // Corregido con el alias
-                                    .Width((float)anchoMm, Unit.Millimetre)
-                                    .Height((float)altoMm, Unit.Millimetre)
-                                    .Border(0.5f, Unit.Point)
-                                    .BorderColor(QuestColors.Grey.Medium) // Corregido con el alias
-                                    .Padding(5) 
-                                    .Column(col =>
-                                    {
-                                        // CORRECCIÓN CS1061: El espaciado se asigna de forma global a la columna aquí
-                                        col.Spacing(3);
+                                // Agrupamos las etiquetas según las columnas calculadas
+                                for (int c = 0; c < columnasQueCaben && index < listaPlanaEtiquetas.Count; c++)
+                                {
+                                    var prod = listaPlanaEtiquetas[index];
+                                    index++;
 
-                                        // FILA 1: Código de Referencia
-                                        col.Item().Row(row =>
-                                        {
-                                            row.RelativeItem().Text($"REF: {prod.Codigo}")
-                                                .FontSize(7)
-                                                .FontColor(QuestColors.Grey.Darken2) // Corregido con el alias
-                                                .Bold();
-                                        });
+                                    // CONGELAMOS EL TAMAÑO REAL REQUERIDO AQUÍ (.ConstantItem)
+                                    row.ConstantItem((float)anchoMm, Unit.Millimetre)
+                                       .Height((float)altoMm, Unit.Millimetre)
+                                       .Background(QuestColors.White)
+                                       .Border(0.5f, Unit.Point)
+                                       .BorderColor(QuestColors.Grey.Medium)
+                                       .Padding(5) 
+                                       .Column(col =>
+                                       {
+                                           col.Spacing(2);
 
-                                        // FILA 2: Nombre del Producto
-                                        // CORRECCIÓN CS1061: Cambiado 'col.RelativeItem()' por 'col.Item()'
-                                        col.Item().Text(prod.Nombre)
-                                            .FontSize(9)
-                                            .Bold()
-                                            .LineHeight(1.1f);
+                                           // Fila 1: Código de Referencia
+                                           col.Item().Row(r =>
+                                           {
+                                               r.RelativeItem().Text($"REF: {prod.Codigo}")
+                                                   .FontSize(7)
+                                                   .FontColor(QuestColors.Grey.Darken2)
+                                                   .Bold();
+                                           });
 
-                                        // FILA 3: Código de Barras ficticio
-                                        col.Item().AlignBottom().Row(row =>
-                                        {
-                                            // CORRECCIÓN CS1929: .AlignCenter() debe ir ANTES de .Text()
-                                            row.RelativeItem().AlignCenter().Text("||||||  |||||  |||||  |||  ||||")
-                                                .FontFamily("Courier New")
-                                                .FontSize(11);
-                                        });
-                                    });
-                            }
+                                           // Fila 2: Nombre del Producto (se ajustará al tamaño de la celda)
+                                           col.Item().Text(prod.Nombre)
+                                               .FontSize(8)
+                                               .Bold()
+                                               .LineHeight(1.0f);
+
+                                           // Fila 3: Simulación visual del Código de Barras (Abajo del todo)
+                                           col.Item().AlignBottom().Row(r =>
+                                           {
+                                               r.RelativeItem().AlignCenter().Text("||||||  |||||  |||||  |||  ||||")
+                                                   .FontFamily("Courier New")
+                                                   .FontSize(10);
+                                           });
+                                       });
+                                }
+                            });
                         }
                     });
                 });
