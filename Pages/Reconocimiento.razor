@@ -26,7 +26,7 @@
             else
             {
                 <button class="btn btn-success btn-lg w-100 py-3 shadow-sm mb-4" @onclick="CapturarAlbaran">
-                    <i class="oi oi-camera"></i> ESCANEAR HOJA COMPLETA
+                    <i class="oi Oi-camera"></i> ESCANEAR HOJA COMPLETA
                 </button>
             }
 
@@ -70,11 +70,11 @@
                         <div class="row g-2">
                             <div class="col-6">
                                 <label class="form-label small text-muted mb-1">Ancho (mm)</label>
-                                <input type="number" class="form-control form-control-sm" @bind="etiquetaAnchoMm" min="10" max="300" disabled="@(presetSeleccionado != "manual")" />
+                                <input type="number" class="form-control form-control-sm" @bind="etiquetaAnchoMm" @bind:event="oninput" min="10" max="300" disabled="@(presetSeleccionado != "manual")" />
                             </div>
                             <div class="col-6">
                                 <label class="form-label small text-muted mb-1">Alto (mm)</label>
-                                <input type="number" class="form-control form-control-sm" @bind="etiquetaAltoMm" min="10" max="300" disabled="@(presetSeleccionado != "manual")" />
+                                <input type="number" class="form-control form-control-sm" @bind="etiquetaAltoMm" @bind:event="oninput" min="10" max="300" disabled="@(presetSeleccionado != "manual")" />
                             </div>
                         </div>
                     </div>
@@ -94,8 +94,9 @@
 </div>
 
 @code {
-    private double etiquetaAnchoMm = 80;
-    private double etiquetaAltoMm = 50;
+    // CORREGIDO: Cambiado a 'int' para evitar bugs de conversión regional de comas/puntos en Android
+    private int etiquetaAnchoMm = 80;
+    private int etiquetaAltoMm = 50;
     private string presetSeleccionado = "estandar";
 
     private void OnChangePresetTamaño(ChangeEventArgs e)
@@ -146,13 +147,24 @@
             var photo = await MediaPicker.CapturePhotoAsync();
             if (photo == null) return;
 
-            estadoMensaje = "Analizando geometría de la página...";
+            estadoMensaje = "Analizando orientación y geometría...";
             StateHasChanged(); 
 
             #if ANDROID
-            var javaFile = new Java.IO.File(photo.FullPath);
-            var imageUri = Android.Net.Uri.FromFile(javaFile);
-            var image = Xamarin.Google.MLKit.Vision.Common.InputImage.FromFilePath(Android.App.Application.Context, imageUri);
+            var bitmapOriginal = Android.Graphics.BitmapFactory.DecodeFile(photo.FullPath);
+            Xamarin.Google.MLKit.Vision.Common.InputImage image;
+
+            if (bitmapOriginal.Width > bitmapOriginal.Height)
+            {
+                var matrix = new Android.Graphics.Matrix();
+                matrix.PostRotate(90);
+                var bitmapRotado = Android.Graphics.Bitmap.CreateBitmap(bitmapOriginal, 0, 0, bitmapOriginal.Width, bitmapOriginal.Height, matrix, true);
+                image = Xamarin.Google.MLKit.Vision.Common.InputImage.FromBitmap(bitmapRotado, 0);
+            }
+            else
+            {
+                image = Xamarin.Google.MLKit.Vision.Common.InputImage.FromBitmap(bitmapOriginal, 0);
+            }
             
             var options = Xamarin.Google.MLKit.Vision.Text.Latin.TextRecognizerOptions.DefaultOptions;
             var recognizer = Xamarin.Google.MLKit.Vision.Text.TextRecognition.GetClient(options);
@@ -187,7 +199,6 @@
         productosDetectados.Clear();
         var todasLasLineas = new List<RawLine>();
 
-        // 1. CÁLCULO DE INCLINACIÓN
         double sumaPendientes = 0;
         int contadorPendientes = 0;
 
@@ -215,13 +226,12 @@
 
         double pendienteMedia = contadorPendientes > 0 ? sumaPendientes / contadorPendientes : 0;
 
-        // 2. FILTRADO INICIAL DE CABECERAS Y DATOS DE EMPRESA
         string[] palabrasBasura = { 
             "telf", "tel.", "telefon", "direccio", "carrer", "c/", "cognom", "nom i", 
             "alliarm", "albaran", "albara", "alberan", "comanda", "pedido", "carer", 
             "fecha", "data", "número", "numero", "pagina", "pag.", "www", "cliente", 
             "proveedor", "seditesa", "srie", "nif", "cif", "total", "subtotal", "iva", "base",
-            "quantitat", "descripcio", "descripció", "edit.org", "sintesis","N Albaran","Nº","EDIT"
+            "quantitat", "descripcio", "descripció", "edit.org", "sintesis"
         };
 
         foreach (var block in visionText.TextBlocks)
@@ -261,7 +271,6 @@
 
         if (!todasLasLineas.Any()) return;
 
-        // 3. AGRUPACIÓN HORIZONTAL POR CARRILES (Tolerancia estándar)
         var lineasOrdenadas = todasLasLineas.OrderBy(l => l.CompensatedY).ToList();
         var filas = new List<List<RawLine>>();
 
@@ -283,7 +292,6 @@
             if (!añadida) filas.Add(new List<RawLine> { linea });
         }
 
-        // 4. PRE-FORMADO DE ITEMS POR FILA
         var productosPreFormados = new List<RowItem>();
 
         foreach (var fila in filas)
@@ -296,7 +304,15 @@
             foreach (var pieza in piezas)
             {
                 string t = pieza.Texto.Trim();
-                var matchNum = System.Text.RegularExpressions.Regex.Match(t, @"^(\d{1,4})(?:\s*(?:ud|uds|pz|pzs|u))?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                string tLimpio = System.Text.RegularExpressions.Regex.Replace(t, @"[.,:;\-_'""\(\)\]\[]", "").Trim();
+                
+                if (tLimpio == "B") tLimpio = "8";
+                if (tLimpio == "S" || tLimpio == "s") tLimpio = "5";
+                if (tLimpio == "O" || tLimpio == "o") tLimpio = "0";
+                if (tLimpio == "I" || tLimpio == "l" || tLimpio == "i") tLimpio = "1";
+                if (tLimpio == "Z" || tLimpio == "z") tLimpio = "2";
+
+                var matchNum = System.Text.RegularExpressions.Regex.Match(tLimpio, @"^(\d{1,4})(?:\s*(?:ud|uds|pz|pzs|u))?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 
                 if (matchNum.Success && !tieneCant)
                 {
@@ -313,7 +329,8 @@
 
             if (!tieneCant)
             {
-                var matchCombinado = System.Text.RegularExpressions.Regex.Match(textoUnido, @"^(\d{1,4})(?:\s*(?:ud|uds|pz|pzs|u))?\s+(.+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                string textoParaCombinado = System.Text.RegularExpressions.Regex.Replace(textoUnido, @"^(\d+)[.,:;\-_'\s]+", "$1 ");
+                var matchCombinado = System.Text.RegularExpressions.Regex.Match(textoParaCombinado, @"^(\d{1,4})(?:\s*(?:ud|uds|pz|pzs|u))?\s+(.+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 if (matchCombinado.Success)
                 {
                     cantFila = int.Parse(matchCombinado.Groups[1].Value);
@@ -340,9 +357,6 @@
             }
         }
 
-        // 5. ENSAMBLADOR SEGURO EN DOS FASES (Elimina el efecto embudo/acordeón)
-        
-        // Fase A: Emparejar de forma cruzada columnas de cantidad sueltas y descripciones de la misma línea horizontal
         for (int i = 0; i < productosPreFormados.Count; i++)
         {
             var actual = productosPreFormados[i];
@@ -355,12 +369,11 @@
                     if (!destino.TieneCantidadExplicita && !string.IsNullOrEmpty(destino.TextoCompleto))
                     {
                         double distY = Math.Abs(destino.AverageY - actual.AverageY);
-                        // Tolerancia estricta en el mismo renglón exacto
                         if (distY < (actual.Height * 1.2))
                         {
                             destino.Cantidad = actual.Cantidad;
                             destino.TieneCantidadExplicita = true;
-                            actual.TextoCompleto = ""; // Desactivamos el número suelto ya asignado
+                            actual.TextoCompleto = ""; 
                             break;
                         }
                     }
@@ -368,7 +381,6 @@
             }
         }
 
-        // Fase B: Agrupar saltos de línea de texto legítimos (Multilíneas reales)
         var listaAgrupadaFinal = new List<RowItem>();
         foreach (var item in productosPreFormados)
         {
@@ -380,8 +392,6 @@
                 var ultimo = listaAgrupadaFinal.Last();
                 double distY = item.AverageY - ultimo.AverageY;
 
-                // UMBRAL DE SEGURIDAD MÁXIMO: 1.3 veces la altura de la fuente. 
-                // Si la distancia es mayor, NO es multilínea, ¡es otro producto sin cantidad!
                 if (distY > 0 && distY < (ultimo.Height * 1.3))
                 {
                     ultimo.TextoCompleto = (ultimo.TextoCompleto + " " + item.TextoCompleto).Trim();
@@ -393,7 +403,6 @@
             listaAgrupadaFinal.Add(item);
         }
 
-        // 6. VOLCADO FINAL A PANTALLA
         foreach (var p in listaAgrupadaFinal)
         {
             if (!string.IsNullOrEmpty(p.TextoCompleto))
@@ -405,7 +414,7 @@
 
                 productosDetectados.Add(new Producto {
                     Nombre = nombreLimpio,
-                    Cantidad = p.Cantidad, // Si el OCR falló en el número, saldrá 0 para que sumes con el botón '+'
+                    Cantidad = p.Cantidad, 
                     Codigo = "OCR-" + DateTime.Now.ToString("mmssfff") + productosDetectados.Count
                 });
             }
@@ -432,6 +441,7 @@
             foreach (var prod in productosParaImprimir)
                 await DB.GuardarProducto(prod);
 
+            // Las variables int se transforman automáticamente a double al pasarlas al servicio
             string path = GeneradorPdf.GenerarEtiquetas(productosParaImprimir, etiquetaAnchoMm, etiquetaAltoMm);
             
             await Launcher.Default.OpenAsync(new OpenFileRequest {
