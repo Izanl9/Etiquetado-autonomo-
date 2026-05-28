@@ -61,7 +61,7 @@
                                 <label class="form-label small text-muted mb-1">Tamaños Rápidos</label>
                                 <select class="form-select form-select-sm" @onchange="OnChangePresetTamaño">
                                     <option value="estandar">Estándar (80mm x 50mm)</option>
-                                    <option value="pequena">Pequeña (40mm x 70mm)</option>
+                                    <option value="pequena">Pequeña (70mm x 40mm)</option>
                                     <option value="grande">Grande (100mm x 70mm)</option>
                                     <option value="manual">Personalizado...</option>
                                 </select>
@@ -69,7 +69,7 @@
                         </div>
                         <div class="row g-2">
                             <div class="col-6">
-                                <label class="form-label small text-muted mb-1">Ancho (mm)</label>
+                                <label class="form-label small text-muted mb-1">Ancho / Largo (mm)</label>
                                 <input type="number" class="form-control form-control-sm" @bind="etiquetaAnchoMm" @bind:event="oninput" min="10" max="300" disabled="@(presetSeleccionado != "manual")" />
                             </div>
                             <div class="col-6">
@@ -102,8 +102,8 @@
     {
         presetSeleccionado = e.Value?.ToString() ?? "estandar";
         if (presetSeleccionado == "estandar") { etiquetaAnchoMm = 80; etiquetaAltoMm = 50; }
-        // MODIFICADO: Ahora el preset asigna de forma nativa 40mm de ancho y 70mm de alto
-        else if (presetSeleccionado == "pequena") { etiquetaAnchoMm = 40; etiquetaAltoMm = 70; }
+        // CORREGIDO: Girado el tamaño para que sea más larga (70) que alta (40)
+        else if (presetSeleccionado == "pequena") { etiquetaAnchoMm = 70; etiquetaAltoMm = 40; }
         else if (presetSeleccionado == "grande") { etiquetaAnchoMm = 100; etiquetaAltoMm = 70; }
     }
 
