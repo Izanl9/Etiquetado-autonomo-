@@ -2,126 +2,109 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using EtiquetadoAuto.Models;
-using iText.Kernel.Geom;
-using iText.Kernel.Pdf;
-using iText.Layout;
-using iText.Layout.Element;
-using iText.Layout.Properties;
-using iText.Layout.Borders;
+using Microsoft.Maui.Storage; // Necesario para FileSystem.CacheDirectory
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
 
 namespace EtiquetadoAuto.Services
 {
     public class PdfService
     {
-        public string GenerarEtiquetas(List<Producto> productos, double anchoMm = 80, double altoMm = 50)
+        public PdfService()
         {
-            // Blindaje de seguridad para el ancho horizontal en el folio A4
-            if (anchoMm > 190) anchoMm = 190;
-            if (anchoMm < 20) anchoMm = 20; 
+            // Requerido en las versiones modernas de QuestPDF (Gratuito para desarrollo/comunidad)
+            QuestPDF.Settings.License = LicenseType.Community;
+        }
 
-            PageSize tamanoHoja = PageSize.A4;
-            string nombreArchivo = $"Etiquetas_Consolidadas_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
-            string rutaCompleta = System.IO.Path.Combine(FileSystem.CacheDirectory, nombreArchivo);
+        /// <summary>
+        /// Genera un archivo PDF con etiquetas distribuidas en 3 columnas por fila respetando el tamaño personalizado.
+        /// </summary>
+        /// <param name="productos">Lista de productos detectados con sus cantidades</param>
+        /// <param name="anchoMm">Ancho personalizado en milímetros</param>
+        /// <param name="altoMm">Alto personalizado en milímetros</param>
+        /// <returns>La ruta física del archivo PDF generado en el dispositivo</returns>
+        public string GenerarEtiquetas(List<Producto> productos, double anchoMm, double altoMm)
+        {
+            // 1. Definir la ruta de guardado temporal segura dentro de Android/iOS
+            string nombreArchivo = $"Etiquetas_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
+            string rutaCarpeta = FileSystem.CacheDirectory; 
+            string rutaCompleta = Path.Combine(rutaCarpeta, nombreArchivo);
 
-            using (PdfWriter writer = new PdfWriter(rutaCompleta))
+            // 2. Crear la estructura del PDF
+            Document.Create(container =>
             {
-                using (PdfDocument pdf = new PdfDocument(writer))
+                container.Page(page =>
                 {
-                    Document documento = new Document(pdf, tamanoHoja);
-                    
-                    // Margen de 10mm alrededor del folio A4
-                    float margenHojaPuntos = (float)(10 * 2.83465);
-                    documento.SetMargins(margenHojaPuntos, margenHojaPuntos, margenHojaPuntos, margenHojaPuntos);
+                    // Configuramos un folio estándar A4 (210mm x 297mm) donde se imprimirán las planchas de etiquetas
+                    page.Size(PageSizes.A4);
+                    page.Margin(10, Unit.Millimetre);
+                    page.PageColor(Colors.White);
 
-                    // Calcular cuántas columnas reales caben a lo ancho según el Entry de la pantalla
-                    double anchoUtilMm = 210 - 20; 
-                    int columnas = (int)(anchoUtilMm / anchoMm);
-                    if (columnas < 1) columnas = 1;
-
-                    float[] anchosColumnas = new float[columnas];
-                    for (int i = 0; i < columnas; i++)
+                    // Creamos una cuadrícula (Grid) interna
+                    page.Content().Grid(grid =>
                     {
-                        anchosColumnas[i] = (float)(anchoMm * 2.83465);
-                    }
+                        // CONFIGURACIÓN CRUCIAL: Forzamos exactamente 3 columnas por fila
+                        grid.Columns(3);
+                        
+                        // Separación en milímetros entre etiquetas (margen de corte/separación)
+                        grid.Spacing(4, Unit.Millimetre); 
 
-                    // Cuadrícula principal transparente
-                    Table tablaGrid = new Table(anchosColumnas);
-                    tablaGrid.SetHorizontalAlignment(iText.Layout.Properties.HorizontalAlignment.CENTER);
-
-                    float anchoPuntosEtiqueta = (float)(anchoMm * 2.83465);
-
-                    foreach (var prod in productos)
-                    {
-                        for (int k = 0; k < prod.Cantidad; k++)
+                        // 3. Iterar los productos escaneados
+                        foreach (var prod in productos)
                         {
-                            // 🌟 CLAVE 1: Eliminamos altoMm de la celda base. 
-                            // Ahora la cuadrícula solo controla el Ancho estricto. El alto será libre.
-                            iText.Layout.Element.Cell celdaGrid = new iText.Layout.Element.Cell()
-                                .SetWidth(anchoPuntosEtiqueta)
-                                .SetPadding(4) // Espacio de separación entre pegatinas vecinas
-                                .SetBorder(iText.Layout.Borders.Border.NO_BORDER)
-                                .SetKeepTogether(true);
+                            // Bucle para duplicar la etiqueta física según la cantidad asignada
+                            for (int i = 0; i < prod.Cantidad; i++)
+                            {
+                                // Cada item ocupa 1 de las 3 columnas disponibles del Grid
+                                grid.Item(1) 
+                                    .Background(Colors.White)
+                                    // Aplicamos el tamaño exacto introducido en la pantalla de Blazor
+                                    .Width((float)anchoMm, Unit.Millimetre)
+                                    .Height((float)altoMm, Unit.Millimetre)
+                                    // Línea fina de borde gris para saber por dónde recortar o despegar
+                                    .Border(0.5f, Unit.Point)
+                                    .BorderColor(Colors.Grey.Medium)
+                                    .Padding(5) 
+                                    .Column(col =>
+                                    {
+                                        // FILA 1: Código de Referencia (Arriba)
+                                        col.Item().Row(row =>
+                                        {
+                                            row.RelativeItem().Text($"REF: {prod.Codigo}")
+                                                .FontSize(7)
+                                                .FontColor(Colors.Grey.Darken2)
+                                                .Bold();
+                                        });
 
-                            // 🌟 CLAVE 2: Creamos la sub-tabla interna para maquetar la pegatina real (Sin SetHeight fijo)
-                            // Al no ponerle un alto fijo, la caja gris se encoge verticalmente eliminando todo el espacio en blanco.
-                            Table tarjetaEtiqueta = new Table(1);
-                            tarjetaEtiqueta.SetWidth(UnitValue.CreatePercentValue(100));
-                            tarjetaEtiqueta.SetBorder(new SolidBorder(iText.Kernel.Colors.ColorConstants.LIGHT_GRAY, 0.5f));
+                                        col.Item().Spacing(3);
 
-                            // Tamaño de letra basado en el ancho disponible para que no se corte hacia los lados
-                            float tamanoNombre = (float)(anchoMm * 0.13);
-                            if (tamanoNombre > 11) tamanoNombre = 11; // Forzamos el tamaño exacto de tu foto buena
-                            if (tamanoNombre < 8)  tamanoNombre = 8;
+                                        // FILA 2: Nombre del Producto (Centro)
+                                        // Usamos RelativeItem para que ocupe todo el espacio central disponible
+                                        col.RelativeItem().Text(prod.Nombre)
+                                            .FontSize(9)
+                                            .Bold()
+                                            .LineHeight(1.1f);
 
-                            float tamanoCodigo = tamanoNombre * 0.75f;
+                                        col.Item().Spacing(3);
 
-                            // Creamos un único párrafo contenedor para que el texto y el contador estén compactados
-                            Paragraph pContenido = new Paragraph()
-                                .SetMargin(0)
-                                .SetPadding(0);
-
-                            // 1. Nombre del producto (Negrita, Izquierda, Mayúsculas)
-                            pContenido.Add(new Text(prod.Nombre.ToUpper() + "\n")
-                                .SetFontColor(iText.Kernel.Colors.ColorConstants.BLACK)
-                                .SetFontSize(tamanoNombre)
-                                .SetBold());
-
-                            // 2. Código justo debajo en gris
-                            pContenido.Add(new Text($"CÓDIGO: {prod.Codigo}")
-                                .SetFontColor(iText.Kernel.Colors.ColorConstants.GRAY)
-                                .SetFontSize(tamanoCodigo));
-
-                            // 3. Contador "X de Y" integrado de forma compacta (Alineado a la derecha abajo)
-                            Paragraph pContador = new Paragraph($"{k + 1} de {prod.Cantidad}")
-                                .SetFontColor(iText.Kernel.Colors.ColorConstants.DARK_GRAY)
-                                .SetFontSize(tamanoCodigo * 0.9f)
-                                .SetTextAlignment(iText.Layout.Properties.TextAlignment.RIGHT)
-                                .SetMarginTop(2) // Separación mínima con el código de arriba
-                                .SetMarginBottom(0);
-
-                            // Metemos los textos en la celda de la pegatina
-                            iText.Layout.Element.Cell celdaContenido = new iText.Layout.Element.Cell()
-                                .Add(pContenido)
-                                .Add(pContador)
-                                .SetPaddingTop(6)
-                                .SetPaddingBottom(4)
-                                .SetPaddingLeft(6)
-                                .SetPaddingRight(6)
-                                .SetBorder(iText.Layout.Borders.Border.NO_BORDER);
-
-                            tarjetaEtiqueta.AddCell(celdaContenido);
-
-                            // Metemos la pegatina dentro de la cuadrícula general
-                            celdaGrid.Add(tarjetaEtiqueta);
-                            tablaGrid.AddCell(celdaGrid);
+                                        // FILA 3: Simulación visual de Código de Barras (Abajo)
+                                        col.Item().AlignBottom().Row(row =>
+                                        {
+                                            // Usamos una fuente monoespaciada para simular líneas de código de barras
+                                            row.RelativeItem().Text("||||||  |||||  |||||  |||  ||||")
+                                                .FontFamily("Courier New")
+                                                .FontSize(11)
+                                                .AlignCenter();
+                                        });
+                                    });
+                            }
                         }
-                    }
+                    });
+                });
+            }).GeneratePdf(rutaCompleta);
 
-                    documento.Add(tablaGrid);
-                    documento.Close();
-                }
-            }
-
+            // 4. Devolvemos la ruta para que 'Launcher.Default.OpenAsync' la abra inmediatamente en el móvil
             return rutaCompleta;
         }
     }

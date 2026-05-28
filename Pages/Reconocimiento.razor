@@ -26,7 +26,7 @@
             else
             {
                 <button class="btn btn-success btn-lg w-100 py-3 shadow-sm mb-4" @onclick="CapturarAlbaran">
-                    <i class="oi Oi-camera"></i> ESCANEAR HOJA COMPLETA
+                    <i class="oi oi-camera"></i> ESCANEAR HOJA COMPLETA
                 </button>
             }
 
@@ -61,7 +61,7 @@
                                 <label class="form-label small text-muted mb-1">Tamaños Rápidos</label>
                                 <select class="form-select form-select-sm" @onchange="OnChangePresetTamaño">
                                     <option value="estandar">Estándar (80mm x 50mm)</option>
-                                    <option value="pequena">Pequeña (50mm x 30mm)</option>
+                                    <option value="pequena">Pequeña (40mm x 70mm)</option>
                                     <option value="grande">Grande (100mm x 70mm)</option>
                                     <option value="manual">Personalizado...</option>
                                 </select>
@@ -94,7 +94,6 @@
 </div>
 
 @code {
-    // CORREGIDO: Cambiado a 'int' para evitar bugs de conversión regional de comas/puntos en Android
     private int etiquetaAnchoMm = 80;
     private int etiquetaAltoMm = 50;
     private string presetSeleccionado = "estandar";
@@ -103,7 +102,8 @@
     {
         presetSeleccionado = e.Value?.ToString() ?? "estandar";
         if (presetSeleccionado == "estandar") { etiquetaAnchoMm = 80; etiquetaAltoMm = 50; }
-        else if (presetSeleccionado == "pequena") { etiquetaAnchoMm = 50; etiquetaAltoMm = 30; }
+        // MODIFICADO: Ahora el preset asigna de forma nativa 40mm de ancho y 70mm de alto
+        else if (presetSeleccionado == "pequena") { etiquetaAnchoMm = 40; etiquetaAltoMm = 70; }
         else if (presetSeleccionado == "grande") { etiquetaAnchoMm = 100; etiquetaAltoMm = 70; }
     }
 
@@ -441,7 +441,6 @@
             foreach (var prod in productosParaImprimir)
                 await DB.GuardarProducto(prod);
 
-            // Las variables int se transforman automáticamente a double al pasarlas al servicio
             string path = GeneradorPdf.GenerarEtiquetas(productosParaImprimir, etiquetaAnchoMm, etiquetaAltoMm);
             
             await Launcher.Default.OpenAsync(new OpenFileRequest {
