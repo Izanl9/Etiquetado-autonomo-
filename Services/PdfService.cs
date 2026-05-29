@@ -25,7 +25,6 @@ namespace EtiquetadoAuto.Services
             string rutaCompleta = Path.Combine(rutaCarpeta, nombreArchivo);
 
             // 1. Creamos una lista emparejando cada etiqueta con su índice de copia actual y el total
-            // Esto nos permite saber exactamente si es la "1 de 3", "2 de 3", etc.
             var listaPlanaEtiquetas = new List<(Producto Prod, int CopiaActual, int TotalCopias)>();
             foreach (var prod in productos)
             {
@@ -93,10 +92,10 @@ namespace EtiquetadoAuto.Services
                                                .FontSize(6)
                                                .FontColor(QuestColors.Grey.Darken1);
 
-                                           // ESPACIADOR DE SQUASH (RelativeItem vacío):
-                                           // Actúa como un muelle elástico dentro de la celda. 
-                                           // Absorbe el espacio libre restante y empuja el contador al fondo.
-                                           col.RelativeItem();
+                                           // CORRECCIÓN SOLUCIONADA: 
+                                           // col.Item().Expand() ahora sí pertenece al contenedor de ítems de la columna.
+                                           // Absorbe el espacio vertical restante y empuja de forma limpia el contador al fondo.
+                                           col.Item().Expand();
 
                                            // TEXTO 3: Contador "X de Y" alineado abajo a la derecha
                                            col.Item().AlignRight().Text($"{item.CopiaActual} de {item.TotalCopias}")
