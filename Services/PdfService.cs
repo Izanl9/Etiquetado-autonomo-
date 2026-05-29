@@ -76,29 +76,27 @@ namespace EtiquetadoAuto.Services
                                        .Border(0.5f, Unit.Point)
                                        .BorderColor(QuestColors.Grey.Lighten1) // Borde fino limpio
                                        .Padding(8) 
-                                       .Column(col =>
+                                       .Layers(layers =>
                                        {
-                                           // Separación uniforme entre textos internos
-                                           col.Spacing(2);
+                                           // CAPA 1 (Principal): Datos del producto en la parte superior
+                                           layers.Primary().Column(col =>
+                                           {
+                                               col.Spacing(2);
 
-                                           // TEXTO 1: Nombre del producto en Mayúsculas
-                                           col.Item().Text(item.Prod.Nombre.ToUpper())
-                                               .FontSize(8)
-                                               .Bold()
-                                               .LineHeight(1.1f);
+                                               // TEXTO 1: Nombre del producto en Mayúsculas
+                                               col.Item().Text(item.Prod.Nombre.ToUpper())
+                                                   .FontSize(8)
+                                                   .Bold()
+                                                   .LineHeight(1.1f);
 
-                                           // TEXTO 2: Código identificador debajo
-                                           col.Item().Text($"CÓDIGO: {item.Prod.Codigo}")
-                                               .FontSize(6)
-                                               .FontColor(QuestColors.Grey.Darken1);
+                                               // TEXTO 2: Código identificador debajo
+                                               col.Item().Text($"CÓDIGO: {item.Prod.Codigo}")
+                                                   .FontSize(6)
+                                                   .FontColor(QuestColors.Grey.Darken1);
+                                           });
 
-                                           // CORRECCIÓN SOLUCIONADA: 
-                                           // col.Item().Expand() ahora sí pertenece al contenedor de ítems de la columna.
-                                           // Absorbe el espacio vertical restante y empuja de forma limpia el contador al fondo.
-                                           col.Item().Expand();
-
-                                           // TEXTO 3: Contador "X de Y" alineado abajo a la derecha
-                                           col.Item().AlignRight().Text($"{item.CopiaActual} de {item.TotalCopias}")
+                                           // CAPA 2 (Superpuesta): Forzamos la posición abajo a la derecha de la celda
+                                           layers.Layer().AlignBottom().AlignRight().Text($"{item.CopiaActual} de {item.TotalCopias}")
                                                .FontSize(7)
                                                .FontColor(QuestColors.Grey.Darken2);
                                        });
