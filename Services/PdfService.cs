@@ -24,34 +24,32 @@ namespace EtiquetadoAuto.Services
             string rutaCarpeta = FileSystem.CacheDirectory; 
             string rutaCompleta = Path.Combine(rutaCarpeta, nombreArchivo);
 
-            // 1. Desglosar todas las unidades físicas de las etiquetas en una lista plana
-            var listaPlanaEtiquetas = new List<Producto>();
+            // 1. Creamos una lista emparejando cada etiqueta con su índice de copia actual y el total
+            // Esto nos permite saber exactamente si es la "1 de 3", "2 de 3", etc.
+            var listaPlanaEtiquetas = new List<(Producto Prod, int CopiaActual, int TotalCopias)>();
             foreach (var prod in productos)
             {
                 for (int i = 0; i < prod.Cantidad; i++)
                 {
-                    listaPlanaEtiquetas.Add(prod);
+                    listaPlanaEtiquetas.Add((prod, i + 1, prod.Cantidad));
                 }
             }
 
-            // 2. CÁLCULO GEOMÉTRICO DINÁMICO (Para evitar deformaciones)
-            // El ancho de un papel A4 es fijo: 210mm.
-            // Calculamos cuántas columnas reales caben físicamente según el ancho configurado.
+            // 2. Cálculo de columnas reales según el ancho de la página A4 (210mm)
             int columnasQueCaben = (int)Math.Floor(210.0 / anchoMm);
             if (columnasQueCaben < 1) columnasQueCaben = 1;
 
-            // Calculamos el espacio sobrante en horizontal para repartirlo a los lados (centrado perfecto)
             double espacioSobrante = 210.0 - (columnasQueCaben * anchoMm);
             float margenHorizontalMm = (float)(espacioSobrante / 2.0);
 
-            // 3. GENERACIÓN DEL DOCUMENTO
+            // 3. Generación del Layout del PDF
             Document.Create(container =>
             {
                 container.Page(page =>
                 {
                     page.Size(PageSizes.A4);
                     
-                    // Aplicamos el margen dinámico para que queden centradas en la plantilla A4
+                    // Centramos el bloque de etiquetas dinámicamente en el folio
                     page.MarginLeft(margenHorizontalMm, Unit.Millimetre);
                     page.MarginRight(margenHorizontalMm, Unit.Millimetre);
                     page.MarginTop(10, Unit.Millimetre);
@@ -60,54 +58,50 @@ namespace EtiquetadoAuto.Services
 
                     page.Content().Column(mainColumn =>
                     {
-                        // Espacio de separación vertical entre filas de etiquetas (3mm de margen de corte)
-                        mainColumn.Spacing(3, Unit.Millimetre);
+                        // Separación vertical entre las filas de etiquetas
+                        mainColumn.Spacing(2, Unit.Millimetre);
 
                         int index = 0;
                         while (index < listaPlanaEtiquetas.Count)
                         {
-                            // Creamos una fila horizontal manual
                             mainColumn.Item().Row(row =>
                             {
-                                // Agrupamos las etiquetas según las columnas calculadas
                                 for (int c = 0; c < columnasQueCaben && index < listaPlanaEtiquetas.Count; c++)
                                 {
-                                    var prod = listaPlanaEtiquetas[index];
+                                    var item = listaPlanaEtiquetas[index];
                                     index++;
 
-                                    // CONGELAMOS EL TAMAÑO REAL REQUERIDO AQUÍ (.ConstantItem)
                                     row.ConstantItem((float)anchoMm, Unit.Millimetre)
                                        .Height((float)altoMm, Unit.Millimetre)
                                        .Background(QuestColors.White)
                                        .Border(0.5f, Unit.Point)
-                                       .BorderColor(QuestColors.Grey.Medium)
-                                       .Padding(5) 
+                                       .BorderColor(QuestColors.Grey.Lighten1) // Borde fino limpio
+                                       .Padding(8) 
                                        .Column(col =>
                                        {
+                                           // Separación uniforme entre textos internos
                                            col.Spacing(2);
 
-                                           // Fila 1: Código de Referencia
-                                           col.Item().Row(r =>
-                                           {
-                                               r.RelativeItem().Text($"REF: {prod.Codigo}")
-                                                   .FontSize(7)
-                                                   .FontColor(QuestColors.Grey.Darken2)
-                                                   .Bold();
-                                           });
-
-                                           // Fila 2: Nombre del Producto (se ajustará al tamaño de la celda)
-                                           col.Item().Text(prod.Nombre)
+                                           // TEXTO 1: Nombre del producto en Mayúsculas
+                                           col.Item().Text(item.Prod.Nombre.ToUpper())
                                                .FontSize(8)
                                                .Bold()
-                                               .LineHeight(1.0f);
+                                               .LineHeight(1.1f);
 
-                                           // Fila 3: Simulación visual del Código de Barras (Abajo del todo)
-                                           col.Item().AlignBottom().Row(r =>
-                                           {
-                                               r.RelativeItem().AlignCenter().Text("||||||  |||||  |||||  |||  ||||")
-                                                   .FontFamily("Courier New")
-                                                   .FontSize(10);
-                                           });
+                                           // TEXTO 2: Código identificador debajo
+                                           col.Item().Text($"CÓDIGO: {item.Prod.Codigo}")
+                                               .FontSize(6)
+                                               .FontColor(QuestColors.Grey.Darken1);
+
+                                           // ESPACIADOR DE SQUASH (RelativeItem vacío):
+                                           // Actúa como un muelle elástico dentro de la celda. 
+                                           // Absorbe el espacio libre restante y empuja el contador al fondo.
+                                           col.RelativeItem();
+
+                                           // TEXTO 3: Contador "X de Y" alineado abajo a la derecha
+                                           col.Item().AlignRight().Text($"{item.CopiaActual} de {item.TotalCopias}")
+                                               .FontSize(7)
+                                               .FontColor(QuestColors.Grey.Darken2);
                                        });
                                 }
                             });
